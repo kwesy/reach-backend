@@ -1,4 +1,4 @@
-from oauth.models.otp import OTP, create_otp, generate_otp
+from oauth.models.otp import OTP, create_otp, generate_otp, hash_otp
 from rest_framework import status, permissions, filters, generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -7,6 +7,8 @@ from rest_framework.exceptions import NotFound, ValidationError, AuthenticationF
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import authenticate
 from django.core.exceptions import PermissionDenied
+from django.utils import timezone
+from datetime import timedelta
 
 from services.services import send_email
 from .models.user import User
@@ -115,8 +117,28 @@ class ResendOTPView(StandardResponseView):
         
         token = serializer.validated_data.get('token')
         otp = get_object_or_404(OTP, id=token, is_used=False)
-        otp.code = generate_otp(6)
+        
+        # limit resend interval
+        if (timezone.now() - otp.updated_at) < timedelta(minutes=1):
+            raise ValidationError({'detail': f'OTP can only be resent after {timedelta(minutes=1).seconds-(timezone.now() - otp.updated_at).seconds} Seconds.'})
+        
+        # Generate new OTP code
+        code = generate_otp(6)
+        otp.code_hash = hash_otp(code)
         otp.save()
+
+        # Send OTP to email
+        try:
+            send_email(
+                subject="OTP Verification",
+                template_name="emails/email_verification.html",
+                context={"name": "", "otp_code": code},
+                recipient_list=[otp.user],
+            )
+            
+        except Exception as e:
+            logger.error(f"Error sending OTP email: {e}", exc_info=True)
+            raise ValidationError({'detail': 'Failed to send OTP email. Please try again later.'})
 
         #TODO: Integrate with SMS service to send the OTP code to the user's email or phone number
         return Response(status=status.HTTP_205_RESET_CONTENT)

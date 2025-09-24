@@ -20,7 +20,7 @@ class OTP(models.Model):
     code_hash = models.CharField(max_length=128)  # Store OTP hash, not OTP
     purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
     is_used = models.BooleanField(default=False)
     meta = models.JSONField(blank=True, null=True)  # to store tx_id, etc.
     attempts = models.IntegerField(default=0)
@@ -28,7 +28,7 @@ class OTP(models.Model):
     def is_valid(self):
         return (
             not self.is_used
-            and timezone.now() < self.expires_at
+            and timezone.now() < self.updated_at + timedelta(minutes=5) # OTP valid for 5 minutes
             and self.attempts < 5
         )
     
