@@ -1,0 +1,15 @@
+django
+djangorestframework
+djangorestframework-simplejwt
+python-decouple
+Pillow
+django-cors-headers
+gunicorn
+psycopg2-binary
+djangorestframework-simplejwt
+shortuuid
+requests
+coverage
+pytest
+pytest-django
+django-ipware

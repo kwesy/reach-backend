@@ -1,0 +1,11 @@
+# Ignore node_modules directory
+__pycache__
+*.pyc
+# Ignore Python bytecode files
+*.pyo
+
+venv
+.env
+mydatabase.sqlite3
+logs
+.coverage
