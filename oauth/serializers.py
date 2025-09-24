@@ -7,7 +7,7 @@ PROVIDER_CHOICES = [('mtn', 'MTN'), ('airtel', 'Airtel'), ('telecel', 'Telecel')
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'phone_number', 'is_verified', 'first_name', 'last_name', 'is_active', 'balance'] #'transfer_allowed', 'transfer_limit',
+        fields = ['id', 'email', 'phone_number', 'first_name', 'last_name', 'email_verified', 'is_active', 'balance'] #'transfer_allowed', 'transfer_limit',
 
 
 # OTP Serializer for verifying OTP codes and resending OTPs

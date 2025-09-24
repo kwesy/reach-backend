@@ -155,7 +155,7 @@ class LoginView( StandardResponseView):
         if not user:
             raise AuthenticationFailed({'detail': 'Invalid credentials'})
         
-        if not user.is_verified:
+        if not user.email_verified:
             raise PermissionDenied("Please verify your account to continue.")
 
         refresh = RefreshToken.for_user(user)
