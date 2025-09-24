@@ -42,23 +42,12 @@ class RegisterView(StandardResponseView):
 
         # Send OTP to email
         try:
-            # send_email(
-            #     subject="Reach Signup Verification",
-            #     template_name="emails/email_verification.html",
-            #     context={"name": user.first_name, "otp_code": code},
-            #     recipient_list=[user.email],
-            # )
-            # send_email(
-            #     subject="Welcome to Reach",
-            #     template_name="emails/welcome.html",
-            #     context={
-            #         "name": user.first_name,
-            #         "dashboard_url": "https://reach.com/dashboard",
-            #         "year": 2025,
-            #     },
-            #     recipient_list=[user.email],
-            # )
-            print(code)
+            send_email(
+                subject="Reach Signup Verification",
+                template_name="emails/email_verification.html",
+                context={"name": user.first_name, "otp_code": code},
+                recipient_list=[user.email],
+            )
             
         except Exception as e:
             user.delete()
@@ -89,6 +78,23 @@ class EmailOTPVerificationView(StandardResponseView, generics.CreateAPIView):
             if user and not user.email_verified and user.email_otp.verify(code):
                 user.email_verified = True
                 user.save()
+
+                try:
+                    send_email(
+                        subject="Welcome to Reach",
+                        template_name="emails/welcome.html",
+                        context={
+                            "name": user.first_name,
+                            "dashboard_url": "https://reach.com/dashboard",
+                            "year": 2025,
+                        },
+                        recipient_list=[user.email],
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error sending Welcome email: {e}", exc_info=True)
+                    #TODO: Handle email sending failure (optional)
+                
                 return Response({"detail": "OTP confirmed successfully"}, status=status.HTTP_200_OK)
             
             raise ValidationError({"detail": "Invalid OTP code or Expired"})

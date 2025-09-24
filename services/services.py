@@ -134,7 +134,6 @@ def send_email(subject, template_name, context, recipient_list):
     Generic function to send templated HTML emails.
     """
     
-    # html_message = render_to_string(template_name, context)
     html_message = get_template(template_name).render(context)
     send_mail(
         subject=subject,
