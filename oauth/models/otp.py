@@ -54,13 +54,12 @@ def generate_otp(length=6):
 def hash_otp(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
-def create_otp(user, purpose: str, expires_in=300, meta=None):
+def create_otp(user, purpose: str, meta=None):
     code = generate_otp()
     otp = OTP.objects.create(
         user=user,
         code_hash=hash_otp(code),
         purpose=purpose,
-        expires_at=timezone.now() + timedelta(seconds=expires_in),
         meta=meta or {},
     )
     return code, otp

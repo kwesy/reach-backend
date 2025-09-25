@@ -42,6 +42,7 @@ class User(AbstractUser):
     email_otp = models.ForeignKey(OTP, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    mfa_enabled = models.BooleanField(default=False)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['phone_number']

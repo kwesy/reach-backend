@@ -1,5 +1,5 @@
 from django.urls import path
-from oauth.views import EmailOTPVerificationView, LoginView, LogoutView, RegisterView, ResendOTPView, UpdateUserView
+from oauth.views import EmailOTPVerificationView, LoginMFAView, LoginView, LogoutView, RegisterView, ResendOTPView, UpdateUserView
 
 
 app_name = 'oauth'
@@ -9,6 +9,7 @@ urlpatterns = [
     path('auth/register/otp-verify', EmailOTPVerificationView.as_view(), name='verify-otp'),
     path('auth/resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
     path('auth/login/', LoginView.as_view(), name='login'),
+    path('auth/login/mfa', LoginMFAView.as_view(), name='login-mfa'),
     path('auth/logout/', LogoutView.as_view(), name='logout'),
     path('auth/update/', UpdateUserView.as_view(), name='update-user'),
     # path('auth/me/', MeView.as_view(), name='me'),
