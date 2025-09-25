@@ -177,19 +177,16 @@ class LogoutView(StandardResponseView):
         except Exception as e:
             raise ValidationError({'detail': 'Invalid token'})  
     
-class UpdateUserView(StandardResponseView):
+class UpdateUserView(StandardResponseView, generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     success_message = "User updated successfully"
+    serializer_class = UserSerializer
+    
+    def get_object(self):
+        return self.request.user
 
-    def patch(self, request):
-        user = request.user
-        data = request.data
-        
-        if 'organization_name' in data:
-            user.organization_name = data['organization_name']
-        
-        user.save()
-        return Response(UserSerializer(user).data)
+    def patch(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
 
 class MeView(StandardResponseView):
     permission_classes = [permissions.IsAuthenticated]

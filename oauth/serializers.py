@@ -9,6 +9,13 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'phone_number', 'first_name', 'last_name', 'email_verified', 'is_active', 'balance'] #'transfer_allowed', 'transfer_limit',
 
+    def update(self, instance, validated_data):
+        
+        instance.first_name = validated_data.get('first_name', instance.first_name)
+        instance.last_name = validated_data.get('last_name', instance.last_name)
+        instance.save()
+        return instance
+
 
 # OTP Serializer for verifying OTP codes and resending OTPs
 class EmailOTPSerializer(serializers.Serializer):
@@ -27,3 +34,5 @@ class ResendOTPSerializer(serializers.Serializer):
     class Meta:
         model = None
         fields = ['token']
+
+
