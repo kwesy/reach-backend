@@ -28,6 +28,7 @@ class TestUserSerializer:
         assert data["email_verified"] is True
         assert data["is_active"] is True
         assert data["balance"] == "500.00"  # Decimal fields are serialized as strings
+        assert data["role"] == "user"  # Default role
 
     def test_user_serializer_update(self):
         user = User.objects.create_user(
@@ -40,7 +41,7 @@ class TestUserSerializer:
         serializer = UserSerializer(
             user, data={
                 "first_name": "Jane", "last_name": "Smith", # updateble fields
-                "balance":500, "email": "change@example.com", "phone_number": "0200000000", "mfa_enabled":True}, # update forbidden fields
+                "balance":500, "email": "change@example.com", "phone_number": "0200000000", "mfa_enabled":True, "role": "admin"}, # update forbidden fields
                 partial=True
         )
         assert serializer.is_valid()
@@ -55,6 +56,7 @@ class TestUserSerializer:
         assert updated_user.email == "testuser@example.com"
         assert updated_user.phone_number == "1234567890"
         assert updated_user.mfa_enabled is False
+        assert updated_user.role == "user"
 
 
 @pytest.mark.django_db

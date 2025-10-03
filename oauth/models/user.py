@@ -4,11 +4,18 @@ from django.db import models
 
 from .otp import OTP
 
+ROLE_CHOICES = (
+    ('user', 'User'),
+    ('admin', 'Admin'),
+    ('manager', 'Manager'),
+)
 
 class UserManager(BaseUserManager):
     use_in_migrations = True
 
     def create_user(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("role", "user")
+
         if not email:
             raise ValueError("Users must have an email address")
         email = self.normalize_email(email)
@@ -20,6 +27,7 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
+        extra_fields.setdefault("role", "admin")
 
         # if extra_fields.get("is_staff") is not True:
         #     raise ValueError("Superuser must have is_staff=True.")
@@ -43,6 +51,7 @@ class User(AbstractUser):
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     mfa_enabled = models.BooleanField(default=False)
+    role = models.CharField(choices=ROLE_CHOICES, default='user')
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['phone_number']

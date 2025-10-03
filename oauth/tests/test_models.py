@@ -86,6 +86,7 @@ class TestUserModel:
         assert user.phone_number == "1234567890"
         assert user.is_active is True
         assert user.email_verified is False
+        assert user.role == "user"
 
     def test_create_superuser(self):
         user = User.objects.create_superuser(
@@ -97,6 +98,7 @@ class TestUserModel:
         assert user.check_password("adminpassword") is True
         assert user.is_superuser is True
         assert user.is_active is True
+        assert user.role == "admin"
 
     def test_user_str(self):
         user = User.objects.create_user(
@@ -134,3 +136,5 @@ class TestUserModel:
         assert user.mfa_enabled is False
         assert user.first_name == ""
         assert user.last_name == ""
+        assert user.role == "user"
+        assert user.created_at is not None
