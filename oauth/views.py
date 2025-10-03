@@ -150,6 +150,10 @@ class LoginView( StandardResponseView):
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
+
+        if User.objects.filter(email=email, role='user').count() == 0:
+            raise AuthenticationFailed({'detail': 'Invalid credentials'})
+        
         user = authenticate(request, email=email, password=password)
 
         if not user or not user.is_active:
