@@ -9,3 +9,4 @@ venv
 mydatabase.sqlite3
 logs
 .coverage
+main

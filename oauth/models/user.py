@@ -27,6 +27,8 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
+        extra_fields.setdefault("mfa_enabled", True)
+        extra_fields.setdefault("email_verified", True)
         extra_fields.setdefault("role", "admin")
 
         # if extra_fields.get("is_staff") is not True:
