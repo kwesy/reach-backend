@@ -98,6 +98,8 @@ class TestUserModel:
         assert user.check_password("adminpassword") is True
         assert user.is_superuser is True
         assert user.is_active is True
+        assert user.email_verified is True
+        assert user.mfa_enabled is True
         assert user.role == "admin"
 
     def test_user_str(self):
