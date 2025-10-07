@@ -25,6 +25,7 @@ class GiftCardType(TimeStampedModel):
     desc = models.CharField(max_length=255)
     denominations = models.JSONField(default=list)  # List of available denominations
     category = models.CharField(choices=CATEGORY_CHOICES)
+    exchange_rate = models.DecimalField(max_digits=3, decimal_places=2, default=1.0)
     is_active = models.BooleanField(default=True)
 
 

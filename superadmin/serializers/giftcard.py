@@ -1,18 +1,36 @@
 from rest_framework import serializers
 from superadmin.models.giftcard import GiftCard, GiftCardType
+from django.db import models
 
 
 class GiftCardTypeSerializer(serializers.ModelSerializer):
+    revenue = serializers.SerializerMethodField(read_only=True)
+    codes_available = serializers.SerializerMethodField(read_only=True)
+    codes_redeemed = serializers.SerializerMethodField(read_only=True)
+
+    def get_revenue(self, obj):
+        return obj.giftcards.filter(is_redeemed=True).aggregate(total=models.Sum('amount'))['total'] or 0
+    
+    def get_codes_available(self, obj):
+        return obj.giftcards.filter(is_redeemed=False).count()
+    
+    def get_codes_redeemed(self, obj):
+        return obj.giftcards.filter(is_redeemed=True).count()
+
     class Meta:
         model = GiftCardType
         # fields = [
         #     'id',
+        #     'name',
         #     'desc',
         #     'denominations',  # JSONField: list of values
         #     'category',
         #     'is_active',
         #     'created_at',
         #     'updated_at',
+        #     'revenue',
+        #     'codes_available',
+        #     'codes_redeemed',
         # ]
         fields = '__all__'
         read_only_fields = ['id']
