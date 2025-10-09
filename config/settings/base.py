@@ -167,7 +167,7 @@ CORS_ALLOWED_ORIGINS = [
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=720), # 12 hours
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,             # Optional: rotate tokens on login
     'BLACKLIST_AFTER_ROTATION': True,          # Required for logout to work
