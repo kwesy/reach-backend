@@ -252,3 +252,7 @@ TEMPLATES = [
 
 # To use pytest
 TEST_RUNNER = "django.test.runner.DiscoverRunner"
+
+CELERY_BROKER_URL = f'redis://{config('REDIS_HOST')}:{config('REDIS_PORT')}/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
