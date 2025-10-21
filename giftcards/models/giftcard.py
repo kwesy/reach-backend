@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth import get_user_model
 
 from common.models.common import TimeStampedModel
 import uuid
@@ -17,6 +18,12 @@ CATEGORY_CHOICES = [
     ('SPORTS', 'Sports & Outdoors'),
     ('BEAUTY', 'Beauty & Personal Care'),
     ('E-COMMERCE', 'E-commerce'),
+]
+
+STATUS_CHOICES = [
+    ('pending', 'Pending'),
+    ('redeemed', 'Redeemed'),
+    ('failed', 'Failed'),
 ]
 
 class GiftCardType(TimeStampedModel):
@@ -40,3 +47,14 @@ class GiftCard(TimeStampedModel):
 
     def __str__(self):
         return f"Giftcard {self.code} - Amount: {self.amount} - Redeemed: {self.is_redeemed}"
+
+class RedeemedGiftCard(models.Model):
+    giftcard_type = models.ForeignKey(GiftCardType, on_delete=models.CASCADE, related_name='redeemed_giftcards')
+    code = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    redeemed_by = models.ForeignKey(get_user_model(), on_delete=models.SET_NULL, null=True, blank=True, related_name='redeemed_giftcards')
+    redeemed_at = models.DateTimeField()
+    status = models.CharField(choices=STATUS_CHOICES, max_length=10, default='pending')
+
+    def __str__(self):
+        return f"{self.code} - {self.amount}"

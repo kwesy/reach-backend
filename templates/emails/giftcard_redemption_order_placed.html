@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Your Order is Being Processed</title>
+</head>
+<body>
+    <h2>🎁 Gift Card Redemption in Progress</h2>
+    <p>Dear {{ user.first_name}},</p>
+
+    <p>Thank you for redeeming your <strong>{{ type }}</strong> gift card.</p>
+
+    <ul>
+        <li><strong>Order ID:</strong> {{ order_id }}</li>
+        <li><strong>Claimed Amount:</strong> ${{ amount_claim }}</li>
+    </ul>
+
+    <p>Your request is currently being processed. You will receive a follow-up email once it's complete or if any action is needed from your side.</p>
+
+    <p>Thank you for using our platform!</p>
+
+    <br>
+    <p>Best regards,<br>The Support Team</p>
+</body>
+</html>

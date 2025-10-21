@@ -129,7 +129,7 @@ class ResendOTPView(StandardResponseView):
 
         # Send OTP to email
         try:
-            send_email(
+            send_email.delay(
                 subject="OTP Verification",
                 template_name="emails/email_verification.html",
                 context={"name": "", "otp_code": code},
@@ -168,7 +168,7 @@ class LoginView( StandardResponseView):
             user.save(update_fields=['email_otp'])
 
             try:
-                send_email(
+                send_email.delay(
                     subject="MFA Verification",
                     template_name="emails/mfa_verification.html",
                     context={"name": user.first_name, "otp_code": code},

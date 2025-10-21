@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'oauth.apps.OauthConfig',
     'superadmin',
+    'giftcards',
 ]
 
 MIDDLEWARE = [

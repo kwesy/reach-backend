@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from superadmin.models.giftcard import GiftCard, GiftCardType
+from giftcards.models.giftcard import GiftCard, GiftCardType, RedeemedGiftCard
 from django.db import models
 
 
@@ -86,3 +86,8 @@ class GiftCardSerializer(serializers.ModelSerializer):
                 })
 
         return data
+
+class RedeemedGiftCardSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RedeemedGiftCard
+        fields = '__all__'

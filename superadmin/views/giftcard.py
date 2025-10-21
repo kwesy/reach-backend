@@ -1,5 +1,5 @@
 from rest_framework import viewsets
-from superadmin.models import GiftCard, GiftCardType
+from giftcards.models import GiftCard, GiftCardType
 from superadmin.serializers import GiftCardSerializer, GiftCardTypeSerializer
 from oauth.permissions import IsAdmin, IsAdminOrReadOnly
 

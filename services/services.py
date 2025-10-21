@@ -8,6 +8,8 @@ import logging
 from django.core.mail import send_mail
 from django.template.loader import get_template
 from django.conf import settings
+from celery import shared_task
+
 
 logger = logging.getLogger("anypay")
 
@@ -129,6 +131,7 @@ def charge_mobile_money(amount:int, phone_number:str, provider:str, email:str=No
 
     return data
 
+@shared_task
 def send_email(subject, template_name, context, recipient_list):
     """
     Generic function to send templated HTML emails.
