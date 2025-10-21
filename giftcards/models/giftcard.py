@@ -49,6 +49,7 @@ class GiftCard(TimeStampedModel):
         return f"Giftcard {self.code} - Amount: {self.amount} - Redeemed: {self.is_redeemed}"
 
 class RedeemedGiftCard(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     giftcard_type = models.ForeignKey(GiftCardType, on_delete=models.CASCADE, related_name='redeemed_giftcards')
     code = models.CharField(max_length=255)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
