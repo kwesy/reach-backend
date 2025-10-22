@@ -91,3 +91,9 @@ class RedeemedGiftCardSerializer(serializers.ModelSerializer):
     class Meta:
         model = RedeemedGiftCard
         fields = '__all__'
+
+    def update(self, instance, validated_data):
+        instance.status = validated_data.get('status', instance.status)
+        instance.amount = validated_data.get('amount', instance.amount)
+        instance.save()
+        return instance
