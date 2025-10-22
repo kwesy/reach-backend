@@ -1,8 +1,9 @@
 from django.shortcuts import render
 from giftcards.models.giftcard import GiftCard, GiftCardType, RedeemedGiftCard
+from giftcards.serializers import RedeemedGiftCardSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, generics
 from rest_framework.exceptions import ValidationError
 from common.mixins.response import StandardResponseView
 from django.utils import timezone
@@ -71,3 +72,13 @@ class RedeemGiftCardView(StandardResponseView):
             logger.error(f"Error sending admin notification for gift card redemption: {e}", exc_info=True)
 
         return Response('Please wait, the gift card is being verified.', status=status.HTTP_200_OK)
+
+class RedeemedGiftCardListView(StandardResponseView, generics.ListAPIView):
+    """
+    API view to list all redeemed gift cards for the authenticated user.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = RedeemedGiftCardSerializer
+
+    def get_queryset(self):
+        return RedeemedGiftCard.objects.filter(redeemed_by=self.request.user).order_by('-redeemed_at')
