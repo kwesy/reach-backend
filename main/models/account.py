@@ -188,12 +188,10 @@ class Account(models.Model):
                 recipient_account = Account.objects.select_for_update().get(pk=destination_account.pk)
 
                 sender_account.subtract_balance(amount)
-                sender_account.save()
 
                 recipient_account.add_balance(amount)
-                recipient_account.save()
 
-                AccountTransaction.objects.create(
+                AccountTransaction.objects.record(
                     account=sender_account,
                     destination_account=recipient_account,
                     transaction_type='transfer',
@@ -202,9 +200,13 @@ class Account(models.Model):
                     performed_by=performed_by,
                     description=description,
                     direction=direction,
+                    currency=self.currency,
+                    metadata=None,
+                    fee=Decimal('0'),
+                    external_details=None,
                 )
         except Exception as e:
-            logger.error("Transfer failed: %s", str(e), exc_info=True)
+            logger.error("Transfer failed for %s: %s", self.account_number, str(e), exc_info=True)
             AccountTransaction.objects.create(
                 account=sender_account,
                 destination_account=recipient_account,
@@ -213,6 +215,11 @@ class Account(models.Model):
                 status='failed',
                 performed_by=performed_by,
                 description=f"{description} - Failed: {str(e)}",
+                direction=direction,
+                currency=self.currency,
+                metadata=None,
+                fee=Decimal('0'),
+                external_details=None,
             )
             raise e
 
@@ -224,31 +231,39 @@ class Account(models.Model):
         try:
             with transaction.atomic():
                 self.add_balance(amount)
-                self.save()
 
-                AccountTransaction.objects.create(
+                AccountTransaction.objects.record(
                     account=self,
+                    destination_account=self,
                     transaction_type='deposit',
                     amount=amount,
-                    status='completed',
+                    status='pending',
                     performed_by=performed_by,
-                    external_party_details=external_details,
+                    external_details=external_details,
                     description=description,
                     direction=direction,
+                    currency=self.currency,
+                    metadata={},
+                    fee=Decimal('0'),
                 )
-        except:
-            logger.error("Deposit failed for account %s", self.account_number, exc_info=True)
+        except Exception as e:
+            logger.error("Deposit failed for account %s: %s", self.account_number, str(e), exc_info=True)
             AccountTransaction.objects.create(
                 account=self,
+                destination_account=self,
                 transaction_type='deposit',
                 amount=amount,
-                status='completed',
+                status='failed',
                 performed_by=performed_by,
                 external_party_details=external_details,
                 description=description,
                 direction=direction,
+                currency=self.currency,
+                metadata={},
+                fee=Decimal('0'),
+
             )
-            raise
+            raise e
 
     def withdraw(self, amount, direction, external_details=None, performed_by=None, description="Withdrawal", auto_complete=True):
         amount = self.quantize(amount)
@@ -275,25 +290,47 @@ class Account(models.Model):
         if amount > limit_per_txn:
             raise ValueError("Withdrawal amount exceeds single transaction limit.")
 
-        with transaction.atomic():
-            
-            if auto_complete:
-                self.subtract_balance(amount)
-                self.save()
-                status = 'completed'
-            else:
-                status = 'pending'
+        try:
+            with transaction.atomic():
+                
+                if auto_complete:
+                    self.subtract_balance(amount)
+                    self.save()
+                    status = 'completed'
+                else:
+                    status = 'pending'
 
+                AccountTransaction.objects.record(
+                    account=self,
+                    destination_account=None,
+                    transaction_type='withdrawal',
+                    amount=amount,
+                    status=status,
+                    performed_by=performed_by,
+                    external_details=external_details,
+                    description=description,
+                    direction=direction,
+                    currency=self.currency,
+                    metadata={},
+                    fee=Decimal('0'),
+                )
+        except Exception as e:
+            logger.error("Withdrawal failed for account %s: %s", self.account_number, str(e), exc_info=True)
             AccountTransaction.objects.create(
                 account=self,
+                destination_account=None,
                 transaction_type='withdrawal',
                 amount=amount,
-                status=status,
+                status='failed',
                 performed_by=performed_by,
                 external_party_details=external_details,
-                description=description,
+                description=f"{description} - Failed: {str(e)}",
                 direction=direction,
+                currency=self.currency,
+                metadata={},
+                fee=Decimal('0'),
             )
+            raise e
 
 
 class FiatAccount(Account):
@@ -388,7 +425,7 @@ class AccountTransaction(TimeStampedModel):
     )
 
     id = models.UUIDField(primary_key=True, unique=True, default=uuid.uuid4, editable=False)
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='sent_transactions')
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True, related_name='sent_transactions')
     destination_account = models.ForeignKey(
         Account,
         null=True,
@@ -400,15 +437,17 @@ class AccountTransaction(TimeStampedModel):
 
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     direction = models.CharField(max_length=30, choices=TRANSACTION_DIRECTIONS, null=True, blank=True)
-    amount = models.DecimalField(max_digits=20, decimal_places=8)
+    amount = models.DecimalField(max_digits=40, decimal_places=18)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     performed_by = models.ForeignKey(get_user_model(), null=True, blank=True, on_delete=models.SET_NULL,
                                      related_name='transactions')
     description = models.CharField(max_length=255, blank=True)
-    fee = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    fee = models.DecimalField(max_digits=40, decimal_places=18, default=0)
     metadata = models.JSONField(null=True, blank=True)
     currency = models.CharField(max_length=3, choices=Account.CURRENCY_CHOICES)
 
+    objects = TransactionManager()
+    
     def __str__(self):
         return f"{self.transaction_type.title()} of {self.amount} on {self.account} ({self.status})"
 
@@ -418,7 +457,7 @@ class Ledger(models.Model):
     transaction = models.ForeignKey(AccountTransaction, on_delete=models.CASCADE, related_name="entries")
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="entries")
     entry_type = models.CharField(max_length=10, choices=ENTRY_TYPES)
-    amount = models.DecimalField(max_digits=20, decimal_places=6)
+    amount = models.DecimalField(max_digits=40, decimal_places=18)
     currency = models.CharField(max_length=3, choices=Account.CURRENCY_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
 
