@@ -8,15 +8,15 @@ from django.db.models import Sum
 from common.models.common import TimeStampedModel
 import logging
 from django.db import IntegrityError
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
+
+from oauth.models.user import User
 
 
 logger = logging.getLogger("transactions")
 
 def generate_account_number():
     return ''.join(secrets.choice('0123456789') for _ in range(11))
-        
-
 
 class Account(models.Model):
 
@@ -42,7 +42,7 @@ class Account(models.Model):
     account_number = models.CharField(max_length=11, unique=True, editable=False, default=generate_account_number)
     owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, related_name="%(class)ss")
     balance = models.DecimalField(max_digits=40, decimal_places=18, default=0)
-    currency = models.CharField(max_length=5, choices=CURRENCY_CHOICES, default='USD')
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='USD')
     limit_per_transaction = models.DecimalField(max_digits=40, decimal_places=18, default=Decimal('2000'))  # max per single transaction
     daily_transfer_limit = models.DecimalField(max_digits=40, decimal_places=18, default=Decimal('5000'))
     monthly_transfer_limit = models.DecimalField(max_digits=40, decimal_places=18, default=Decimal('50000'))
@@ -305,6 +305,63 @@ class CryptoAccount(Account):
     blockchain_network = models.CharField(max_length=100)
 
 
+class TransactionManager(models.Manager):
+    """Custom manager that encapsulates all ledger recording logic."""
+
+    @transaction.atomic
+    def record(
+        self,
+        account: str,
+        destination_account: str,
+        transaction_type: str,
+        amount: Decimal,
+        performed_by: User,
+        description: str,
+        direction: str,
+        currency: str,
+        fee: Decimal = Decimal('0'),     
+        metadata: dict = None,
+        external_details: dict = None,
+        status:str = 'pending',
+    ):
+        """Creates a double-entry transaction ledger validation."""
+
+        # Create the transaction record
+        tx = self.create(
+                account=account,
+                destination_account=destination_account,
+                transaction_type=transaction_type,
+                amount=amount,
+                status=status,
+                performed_by=performed_by,
+                external_party_details=external_details,
+                description=description,
+                direction=direction,
+                fee=fee,
+                metadata=metadata or {},
+                currency=currency,
+            )
+
+        # Build ledger entries
+        entries = []
+
+        # Debit from sender
+        entries.append(Ledger(transaction=tx, account=account, entry_type="debit", amount=amount, currency=currency))
+
+        # Credit to receiver
+        entries.append(Ledger(transaction=tx, account=destination_account, entry_type="credit", amount=amount, currency=currency))
+
+        # Save entries
+        Ledger.objects.bulk_create(entries)
+
+        # Validate double-entry
+        debit_sum = sum(e.amount for e in entries if e.entry_type == "debit")
+        credit_sum = sum(e.amount for e in entries if e.entry_type == "credit")
+        if debit_sum != credit_sum:
+            raise ValidationError(f"Ledger imbalance: debits={debit_sum}, credits={credit_sum}")
+
+        return tx
+
 class AccountTransaction(TimeStampedModel):
     TRANSACTION_TYPES = (
         ('deposit', 'Deposit'),
@@ -350,6 +407,20 @@ class AccountTransaction(TimeStampedModel):
     description = models.CharField(max_length=255, blank=True)
     fee = models.DecimalField(max_digits=20, decimal_places=8, default=0)
     metadata = models.JSONField(null=True, blank=True)
+    currency = models.CharField(max_length=3, choices=Account.CURRENCY_CHOICES)
 
     def __str__(self):
         return f"{self.transaction_type.title()} of {self.amount} on {self.account} ({self.status})"
+
+class Ledger(models.Model):
+    ENTRY_TYPES = [("debit", "Debit"), ("credit", "Credit")]
+
+    transaction = models.ForeignKey(AccountTransaction, on_delete=models.CASCADE, related_name="entries")
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="entries")
+    entry_type = models.CharField(max_length=10, choices=ENTRY_TYPES)
+    amount = models.DecimalField(max_digits=20, decimal_places=6)
+    currency = models.CharField(max_length=3, choices=Account.CURRENCY_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.entry_type.upper()} {self.amount} {self.account.currency} → {self.account}"
