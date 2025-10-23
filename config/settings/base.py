@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'oauth.apps.OauthConfig',
     'superadmin',
     'giftcards',
+    'main',
 ]
 
 MIDDLEWARE = [
@@ -205,6 +206,12 @@ LOGGING = {
             'filename': BASE_DIR / '../logs/error.log',
             'formatter': 'verbose',
         },
+        'transaction_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / '../logs/transactions.log',
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'request_logger': {
@@ -222,6 +229,11 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'transactions': {
+            'handlers': ['transaction_file'],
+            'level': 'INFO',
+            'propagate': False,
+        }
     },
 }
 

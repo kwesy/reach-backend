@@ -9,7 +9,6 @@ venv
 mydatabase.sqlite3
 logs
 .coverage
-main
 try.py
 docker-compose.yml
 start.sh

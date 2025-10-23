@@ -1,3 +1,4 @@
+from main.models.account import Account
 from oauth.models.otp import OTP, create_otp, generate_otp, hash_otp
 from rest_framework import status, permissions, filters, generics
 from rest_framework.response import Response
@@ -44,17 +45,14 @@ class RegisterView(StandardResponseView):
 
         # Send OTP to email
         try:
-            send_email(
+            send_email.delay(
                 subject="Reach Signup Verification",
                 template_name="emails/email_verification.html",
                 context={"name": user.first_name, "otp_code": code},
                 recipient_list=[user.email],
             )
-            
         except Exception as e:
-            user.delete()
             logger.error(f"Error sending OTP email: {e}", exc_info=True)
-            raise ValidationError({'detail': 'Failed to send OTP email. Please try again later.'})
         
         return Response({'email': user.email, 'token': otp_obj.id}, status=201)
     
@@ -81,21 +79,25 @@ class EmailOTPVerificationView(StandardResponseView, generics.CreateAPIView):
                 user.email_verified = True
                 user.save()
 
+                # Create account after successful verification
+                Account.objects.create(
+                    owner=user,
+                )
+
                 try:
-                    send_email(
+                    send_email.delay(
                         subject="Welcome to Reach",
                         template_name="emails/welcome.html",
                         context={
                             "name": user.first_name,
-                            "dashboard_url": "https://reach.com/dashboard",
+                            "dashboard_url": "https://reachvault.io/dashboard",
                             "year": 2025,
                         },
                         recipient_list=[user.email],
                     )
                     
                 except Exception as e:
-                    logger.error(f"Error sending Welcome email: {e}", exc_info=True)
-                    #TODO: Handle email sending failure (optional)
+                    logger.error("Error sending Welcome email: %s", str(e), exc_info=True)
                 
                 return Response({"detail": "OTP confirmed successfully"}, status=status.HTTP_200_OK)
             
