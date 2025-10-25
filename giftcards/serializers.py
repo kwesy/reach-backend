@@ -10,7 +10,7 @@ class RedeemedGiftCardSerializer(serializers.ModelSerializer):
             'id',
             'giftcard_type',
             'code',
-            'amount',
+            'amount_claimed',
             'redeemed_at',
             'status',
         ]
@@ -21,6 +21,12 @@ class RedeemedGiftCardSerializer(serializers.ModelSerializer):
 
         # Hide amount if status is pending or failed
         if instance.status in ['pending', 'failed']:
-            data.pop('amount', None)
+            data.pop('amount_confirmed', None)
+
+        if instance.redeemed_by:
+            data['redeemed_by'] = {
+                'id': str(instance.redeemed_by.id),
+                'email': instance.redeemed_by.email,
+            }
 
         return data

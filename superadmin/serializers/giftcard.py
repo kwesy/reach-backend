@@ -94,6 +94,6 @@ class RedeemedGiftCardSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         instance.status = validated_data.get('status', instance.status)
-        instance.amount = validated_data.get('amount', instance.amount)
+        instance.amount_confirmed = validated_data.get('amount_confirmed', instance.amount_confirmed)
         instance.save()
         return instance

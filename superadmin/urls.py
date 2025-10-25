@@ -20,6 +20,6 @@ urlpatterns = [
     path('', include(router.urls)),
 
     # redeem gift cards 
-    path('redeemed-giftcards', RedeemedGiftCardView.as_view(), name='admin-redeemed-giftcards'),
-    path('redeemed-giftcards/<uuid:pk>', RedeemedGiftCardView.as_view(), name='admin-redeemed-giftcards'),
+    path('redeemed-giftcards-orders', RedeemedGiftCardView.as_view(), name='admin-redeem-giftcards-orders'), # view all user redeemed gift cards
+    path('redeem/<uuid:pk>', RedeemedGiftCardView.as_view(), name='admin-approve/reject-giftcards'), # admin to approve/reject
 ]
