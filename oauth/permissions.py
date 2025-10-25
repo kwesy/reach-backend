@@ -4,7 +4,7 @@ from rest_framework.permissions import BasePermission
 class IsAdmin(BasePermission):
     """
     Custom permission to only allow admin users.
-    You can modify the logic as needed.
+    Admin is a user with role 'admin' and user.is_superuser is also considered admin.
     """
     def has_permission(self, request, view):
         user = request.user

@@ -1,15 +1,19 @@
-from main.models.account import AccountTransaction
+from main.models.account import AccountTransaction, CryptoAccount, FiatAccount
 from rest_framework import serializers
-from decimal import Decimal
-from .models import Account
+from main.models import Account
 
-class AccountSerializer(serializers.ModelSerializer):
+
+class AdminAccountSerializer(serializers.ModelSerializer):
     owner = serializers.StringRelatedField(read_only=True)  # or serializers.PrimaryKeyRelatedField(read_only=True)
+    account_type = serializers.SerializerMethodField()
+
+    def get_account_type(self, obj):
+        return obj.get_account_type()
     
     class Meta:
         model = Account
         fields = [
-            "id",
+            # "id",
             "account_number",
             "owner",
             "balance",
@@ -22,8 +26,10 @@ class AccountSerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
             "updated_at",
+            "account_type",
         ]
-        read_only_fields = ["id", "account_number", "owner", "balance", "currency", "metadata", "created_at", "updated_at"]
+        # read_only_fields = ["id", "account_number", "owner", "balance", "currency", "wallet", "blockchain_network", "metadata", "created_at", "updated_at"]
+        read_only_fields = fields # nothing can be changed via this serializers
 
     def validate_limit_per_transaction(self, value):
         if value <= 0:
@@ -47,9 +53,40 @@ class AccountSerializer(serializers.ModelSerializer):
         if daily and monthly and daily > monthly:
             raise serializers.ValidationError("Daily transfer limit cannot exceed monthly transfer limit.")
         return attrs
+    
+    def update(self, instance, validated_data):
+        # Since all fields are read-only, we prevent updates
+        raise NotImplementedError("Accounts cannot be updated via this serializer.")
+
+    def delete(self, instance):
+        raise NotImplementedError("Accounts cannot be deleted via this serializer.")
+    
+
+class AdminFiatAccountSerializer(AdminAccountSerializer):
+    account_type = serializers.CharField(default="fiat")
+
+    class Meta(AdminAccountSerializer.Meta):
+        model = FiatAccount
+        fields = AdminAccountSerializer.Meta.fields
 
 
-class TransactionSerializer(serializers.ModelSerializer):
+class AdminCryptoAccountSerializer(AdminAccountSerializer):
+    account_type = serializers.CharField(default="crypto")
+
+    class Meta(AdminAccountSerializer.Meta):
+        model = CryptoAccount
+        fields = AdminAccountSerializer.Meta.fields + ["wallet", "blockchain_network"]
+
+
+class AdminAccountPolymorphicSerializer(serializers.Serializer):
+    def to_representation(self, instance):
+        if hasattr(instance, "fiataccount"):
+            return AdminFiatAccountSerializer(instance.fiataccount).data
+        
+        return AdminCryptoAccountSerializer(instance.cryptoaccount).data
+
+
+class AdminTransactionSerializer(serializers.ModelSerializer):
     account = serializers.PrimaryKeyRelatedField(queryset=Account.objects.all())
     destination_account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.all(), required=False, allow_null=True
@@ -76,33 +113,33 @@ class TransactionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Transaction amount must be positive.")
-        return value
+    # def validate_amount(self, value):
+    #     if value <= 0:
+    #         raise serializers.ValidationError("Transaction amount must be positive.")
+    #     return value
 
-    def validate_fee(self, value):
-        if value < 0:
-            raise serializers.ValidationError("Fee cannot be negative.")
-        return value
+    # def validate_fee(self, value):
+    #     if value < 0:
+    #         raise serializers.ValidationError("Fee cannot be negative.")
+    #     return value
 
-    def validate(self, attrs):
-        account = attrs.get("account")
-        dest_account = attrs.get("destination_account")
-        currency = attrs.get("currency")
+    # def validate(self, attrs):
+    #     account = attrs.get("account")
+    #     dest_account = attrs.get("destination_account")
+    #     currency = attrs.get("currency")
 
-        if dest_account and account == dest_account:
-            raise serializers.ValidationError("Source and destination accounts cannot be the same.")
+    #     if dest_account and account == dest_account:
+    #         raise serializers.ValidationError("Source and destination accounts cannot be the same.")
 
-        # Optional: Check if the currency matches account currency
-        if account and currency != account.currency:
-            raise serializers.ValidationError("Transaction currency must match source account currency.")
+    #     # Optional: Check if the currency matches account currency
+    #     if account and currency != account.currency:
+    #         raise serializers.ValidationError("Transaction currency must match source account currency.")
 
-        if dest_account and dest_account.currency != currency:
-            # This allows cross-currency but you might enforce rules if needed
-            raise serializers.ValidationError("Transaction currency must match source account currency.")
+    #     if dest_account and dest_account.currency != currency:
+    #         # This allows cross-currency but you might enforce rules if needed
+    #         raise serializers.ValidationError("Transaction currency must match source account currency.")
 
-        return attrs
+    #     return attrs
     
     def create(self, validated_data):
         # Ensure that transactions are created via business logic, not directly

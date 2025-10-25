@@ -17,7 +17,7 @@ class GiftCardViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
     filterset_fields = ['giftcard_type', 'redeemed_by']
 
-class RedeemedGiftCardViewSet(StandardResponseView, generics.ListAPIView, generics.UpdateAPIView):
+class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.UpdateAPIView):
     queryset = RedeemedGiftCard.objects.all()
     serializer_class = RedeemedGiftCardSerializer
     permission_classes = [IsAdmin]

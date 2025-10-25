@@ -1,4 +1,4 @@
-from main.models.account import Account
+from main.models.account import Account, FiatAccount, CryptoAccount
 from oauth.models.otp import OTP, create_otp, generate_otp, hash_otp
 from rest_framework import status, permissions, filters, generics
 from rest_framework.response import Response
@@ -80,7 +80,7 @@ class EmailOTPVerificationView(StandardResponseView, generics.CreateAPIView):
                 user.save()
 
                 # Create account after successful verification
-                Account.objects.create(
+                FiatAccount.objects.create(
                     owner=user,
                 )
 

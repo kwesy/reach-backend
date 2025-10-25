@@ -332,6 +332,10 @@ class Account(models.Model):
             )
             raise e
 
+    def get_account_type(self, obj):
+        if hasattr(obj, "fiataccount"):
+            return "fiat"
+        return "crypto"
 
 class FiatAccount(Account):
     pass
