@@ -117,6 +117,7 @@ class Account(models.Model):
         locked_account = Account.objects.select_for_update().get(pk=self.pk)
         locked_account.balance = self.quantize(locked_account.balance + amount)
         locked_account.save()
+        self.refresh_from_db(fields=['balance'])
         return locked_account.balance
 
     def subtract_balance(self, amount):
@@ -138,6 +139,7 @@ class Account(models.Model):
             raise ValueError("Balance cannot go negative.")
         locked_account.balance = self.quantize(locked_account.balance - amount)
         locked_account.save()
+        self.refresh_from_db(fields=['balance'])
         return locked_account.balance
 
     def get_daily_transferred_amount(self):
