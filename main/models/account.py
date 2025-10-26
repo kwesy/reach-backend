@@ -570,7 +570,6 @@ class Ledger(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="entries")
     entry_type = models.CharField(max_length=10, choices=ENTRY_TYPES)
     amount = models.DecimalField(max_digits=40, decimal_places=18)
-    currency = models.CharField(max_length=3, choices=Account.CURRENCY_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
