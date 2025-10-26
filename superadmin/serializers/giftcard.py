@@ -88,8 +88,12 @@ class GiftCardSerializer(serializers.ModelSerializer):
         return data
 
 class RedeemedGiftCardSerializer(serializers.ModelSerializer):
+    SOURCE_CHOICES = [('moneypak', 'MoneyPak'), ('netflix', 'Netflix')]
     redeemed_by = serializers.SerializerMethodField(read_only=True)
     giftcard_type = serializers.SerializerMethodField(read_only=True)
+    source = serializers.ChoiceField(required=True, choices=SOURCE_CHOICES, write_only=True) # required is set but fials validation
+    external_ref_id = serializers.CharField(max_length=50, required=True, write_only=True) # required is set but fials validation
+
     
     def get_redeemed_by(self, instance):
         return {
@@ -108,6 +112,23 @@ class RedeemedGiftCardSerializer(serializers.ModelSerializer):
     class Meta:
         model = RedeemedGiftCard
         fields = '__all__'
+
+    def create(self, validated_data):
+        # 1. Extract the write_only fields
+        source = validated_data.pop('source')
+        external_ref_id = validated_data.pop('external_ref_id')
+
+        # 2. Perform custom logic with these fields
+        #    e.g., You might log the source/ref_id, or use them to link to another
+        #    model before creating the RedeemedGiftCard.
+        print(f"Custom logic: Source is '{source}', Ref ID is '{external_ref_id}'")
+
+        # 3. Create the model instance using the remaining validated_data
+        #    (which should now only contain model fields like redeemed_by, giftcard_type, etc.)
+        redeemed_gift_card = RedeemedGiftCard.objects.create(**validated_data)
+
+        # 4. Return the instance
+        return redeemed_gift_card
 
     def update(self, instance, validated_data):
         instance.status = validated_data.get('status', instance.status)

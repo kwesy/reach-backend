@@ -182,7 +182,7 @@ class Account(models.Model):
 
         return True
     
-    def credit_account(self, amount, description="Credit", performed_by=None):
+    def credit_account(self, amount, description="adjust-up", performed_by=None):
         """Credits the account with the specified amount and records the transaction."""
         amount = self.quantize(amount)
         if amount <= 0:
@@ -222,7 +222,7 @@ class Account(models.Model):
             )
             raise e
         
-    def debit_account(self, amount, description="Debit", performed_by=None):
+    def debit_account(self, amount, description="adjust-down", performed_by=None):
         """Debits the account with the specified amount and records the transaction."""
         amount = self.quantize(amount)
         if amount <= 0:
@@ -320,7 +320,7 @@ class Account(models.Model):
             )
             raise e
 
-    def deposit(self, amount, direction, external_details=None, performed_by=None, description="Deposit"):
+    def deposit(self, amount, direction, external_details=None, performed_by=None, description="Deposit", metadata={}, auto_complete=False):
         amount = self.quantize(amount)
         if amount <= 0:
             raise ValueError("Deposit amount must be positive.")
@@ -334,13 +334,13 @@ class Account(models.Model):
                     destination_account=self,
                     transaction_type='deposit',
                     amount=amount,
-                    status='pending',
+                    status='completed' if auto_complete else 'pending',
                     performed_by=performed_by,
                     external_details=external_details,
                     description=description,
                     direction=direction,
                     currency=self.currency,
-                    metadata={},
+                    metadata=metadata,
                     fee=Decimal('0'),
                 )
         except Exception as e:
@@ -533,6 +533,7 @@ class AccountTransaction(TimeStampedModel):
         ('fiat_to_crypto', 'Fiat to Crypto'),
         ('crypto_to_fiat', 'Crypto to Fiat'),
         ('crypto_swap', 'Crypto Swap'),
+        ('gift_card_to_account', 'Gift Card to Account'),
     )
 
     id = models.UUIDField(primary_key=True, unique=True, default=uuid.uuid4, editable=False)

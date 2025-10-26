@@ -32,11 +32,17 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
     def perform_update(self, serializer):
         amount_confirmed = serializer.validated_data.get('amount_confirmed', 0)
         redeemed_by = serializer.instance.redeemed_by
+        external_ref_id = serializer.validated_data.get('external_ref_id', '')
+        source = serializer.validated_data.get('source', '')
+
+        if not external_ref_id or not source:
+            raise ValidationError({"detail":"Both external_ref_id and source are required to process the gift card."})
 
         if serializer.instance.status in ['redeemed', 'failed']:
             # No action needed if already redeemed or failed
             raise ValidationError({"detail":"This gift card has already been processed."})
-
+        
+         # If no user is associated or amount confirmed is zero or status is not redeemed, just save without processing
         if not redeemed_by or amount_confirmed <= 0 or serializer.validated_data.get('status') != 'redeemed':
             serializer.save()
             return
@@ -48,7 +54,16 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
         try:   
             with transaction.atomic():
                 # credit the admin's fiat account if the gift card is approved
-                admin_acc.credit_account(amount_confirmed, description=f"Redeemed Gift Card ID: {serializer.instance.id}")
+                admin_acc.deposit(
+                    amount=amount_confirmed,
+                    direction="gift_card_to_account",
+                    description=f"Redeemed Gift Card ID: {serializer.instance.id}",
+                    metadata={
+                        "source_type": source,
+                        "card_provider": serializer.instance.giftcard_type.name,
+                        "external_ref_id": external_ref_id,
+                        },
+                    performed_by=self.request.user)
                 
                 # credit the user's fiat account with thier share
                 admin_acc.transfer(amount_confirmed * exchange_rate, user_fiat_acc, performed_by=self.request.user, description=f"Gift Card Redemption ID: {serializer.instance.id}")
