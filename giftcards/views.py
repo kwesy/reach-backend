@@ -43,9 +43,11 @@ class RedeemGiftCardView(StandardResponseView):
         card = RedeemedGiftCard.objects.create(
             giftcard_type=gc_type,
             code=gift_card_code,
-            amount=0,  # Amount will be set by admin after successfully redeeming card
+            amount_claimed=amount,  # Amount will be set by admin after successfully redeeming card
+            amount_confirmed=0,
             redeemed_by=request.user,
             redeemed_at=timezone.now(),
+            exchange_rate=gc_type.exchange_rate,
             status='pending'
         )
 

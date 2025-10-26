@@ -11,6 +11,7 @@ class RedeemedGiftCardSerializer(serializers.ModelSerializer):
             'giftcard_type',
             'code',
             'amount_claimed',
+            'exchange_rate',
             'redeemed_at',
             'status',
         ]

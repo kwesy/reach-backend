@@ -43,7 +43,7 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
 
         admin_acc = self.request.user.account.fiat(currency='USD')
         user_fiat_acc = redeemed_by.account.fiat()
-        exchange_rate = serializer.instance.giftcard_type.exchange_rate
+        exchange_rate = serializer.instance.exchange_rate
 
         try:   
             with transaction.atomic():
