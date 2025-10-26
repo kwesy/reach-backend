@@ -88,6 +88,23 @@ class GiftCardSerializer(serializers.ModelSerializer):
         return data
 
 class RedeemedGiftCardSerializer(serializers.ModelSerializer):
+    redeemed_by = serializers.SerializerMethodField(read_only=True)
+    giftcard_type = serializers.SerializerMethodField(read_only=True)
+    
+    def get_redeemed_by(self, instance):
+        return {
+            'id': instance.redeemed_by.id,
+            'email': instance.redeemed_by.email
+        }
+    
+    def get_giftcard_type(self, instance):
+        return {
+            'id': str(instance.giftcard_type.id),
+            'name': instance.giftcard_type.name,
+            'category': instance.giftcard_type.category,
+            'is_active': instance.giftcard_type.is_active,
+        }
+
     class Meta:
         model = RedeemedGiftCard
         fields = '__all__'

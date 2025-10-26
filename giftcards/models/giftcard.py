@@ -59,4 +59,4 @@ class RedeemedGiftCard(models.Model):
     status = models.CharField(choices=STATUS_CHOICES, max_length=10, default='pending')
 
     def __str__(self):
-        return f"{self.code} - {self.amount}"
+        return f"{self.code} - {self.amount_confirmed}"

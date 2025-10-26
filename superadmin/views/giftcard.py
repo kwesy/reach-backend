@@ -5,6 +5,12 @@ from giftcards.models import GiftCard, GiftCardType
 from superadmin.serializers import GiftCardSerializer, GiftCardTypeSerializer
 from oauth.permissions import IsAdmin, IsAdminOrReadOnly
 from common.mixins.response import StandardResponseView
+from django.db import transaction
+import logging
+from rest_framework.exceptions import ValidationError
+
+
+logger = logging.getLogger('transactions')
 
 class GiftCardTypeViewSet(viewsets.ModelViewSet):
     queryset = GiftCardType.objects.all()
@@ -22,3 +28,33 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
     serializer_class = RedeemedGiftCardSerializer
     permission_classes = [IsAdmin]
     filterset_fields = ['giftcard_type', 'status', 'redeemed_by']
+
+    def perform_update(self, serializer):
+        amount_confirmed = serializer.validated_data.get('amount_confirmed', 0)
+        redeemed_by = serializer.instance.redeemed_by
+
+        if serializer.instance.status in ['redeemed', 'failed']:
+            # No action needed if already redeemed or failed
+            raise ValidationError({"detail":"This gift card has already been processed."})
+
+        if not redeemed_by or amount_confirmed <= 0 or serializer.validated_data.get('status') != 'redeemed':
+            serializer.save()
+            return
+
+        admin_acc = self.request.user.account.fiat(currency='USD')
+        user_fiat_acc = redeemed_by.account.fiat()
+        exchange_rate = serializer.instance.giftcard_type.exchange_rate
+
+        try:   
+            with transaction.atomic():
+                # credit the admin's fiat account if the gift card is approved
+                admin_acc.credit_account(amount_confirmed, description=f"Redeemed Gift Card ID: {serializer.instance.id}")
+                
+                # credit the user's fiat account with thier share
+                admin_acc.transfer(amount_confirmed * exchange_rate, user_fiat_acc, performed_by=self.request.user, description=f"Gift Card Redemption ID: {serializer.instance.id}")
+
+        except Exception as e:
+            logger.error("Credit failed for account %s: %s", user_fiat_acc.account_number, str(e), exc_info=True)
+            raise e
+
+        serializer.save()
