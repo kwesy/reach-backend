@@ -170,7 +170,7 @@ class Account(models.Model):
         today = timezone.now().date()
         total = self.sent_transactions.filter(
             created_at__date=today,
-            status='completed',
+            status='success',
             transaction_type='transfer'
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         return self.quantize(total)
@@ -180,7 +180,7 @@ class Account(models.Model):
         start_of_month = today.replace(day=1)
         total = self.sent_transactions.filter(
             created_at__date__gte=start_of_month,
-            status='completed',
+            status='success',
             transaction_type='transfer'
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         return self.quantize(total)
@@ -221,7 +221,7 @@ class Account(models.Model):
                     destination_account=self,
                     transaction_type='adjustment',
                     amount=amount,
-                    status='completed',
+                    status='success',
                     performed_by=performed_by,
                     description=description,
                     direction=None,
@@ -264,7 +264,7 @@ class Account(models.Model):
                     destination_account=self,
                     transaction_type='adjustment',
                     amount=-amount, # negative amount for debit
-                    status='completed',
+                    status='success',
                     performed_by=performed_by,
                     description=description,
                     direction=None,
@@ -313,7 +313,7 @@ class Account(models.Model):
                     destination_account=revenue_account,
                     transaction_type='fee',
                     amount=fee_amount,
-                    status='completed',
+                    status='success',
                     performed_by=performed_by,
                     description=description,
                     direction=None,
@@ -355,7 +355,7 @@ class Account(models.Model):
                     destination_account=recipient_account,
                     transaction_type='transfer',
                     amount=amount,
-                    status='completed',
+                    status='success',
                     performed_by=performed_by,
                     description=description,
                     direction='wallet_to_wallet',
@@ -396,7 +396,7 @@ class Account(models.Model):
                     destination_account=self,
                     transaction_type='deposit',
                     amount=amount,
-                    status='completed' if auto_complete else 'pending',
+                    status='success' if auto_complete else 'pending',
                     performed_by=performed_by,
                     external_party_details=external_details,
                     description=description,
@@ -459,7 +459,7 @@ class Account(models.Model):
                 
                 if auto_complete:
                     self.subtract_balance(amount + external_fee)
-                    status = 'completed'
+                    status = 'success'
                 else:
                     status = 'pending'
 
@@ -661,7 +661,7 @@ class AccountTransaction(TimeStampedModel):
 
     STATUS_CHOICES = (
         ('pending', 'Pending'),
-        ('completed', 'Completed'),
+        ('success', 'Success'),
         ('failed', 'Failed'),
     )
 
