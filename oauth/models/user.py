@@ -7,6 +7,7 @@ from .otp import OTP
 ROLE_CHOICES = (
     ('user', 'User'),
     ('admin', 'Admin'),
+    ('sys', 'System'),
     ('manager', 'Manager'),
 )
 
@@ -37,6 +38,21 @@ class UserManager(BaseUserManager):
             raise ValueError("Superuser must have is_superuser=True.")
 
         return self.create_user(email, password, **extra_fields)
+    
+    def create_system_user(self):
+        fields = {}
+        fields.setdefault("email", "sys@reachvault.io")
+        fields.setdefault("is_superuser", False)
+        fields.setdefault("is_active", True)
+        fields.setdefault("mfa_enabled", False)
+        fields.setdefault("email_verified", True)
+        fields.setdefault("role", "sys")
+
+        sys_user = self.model(**fields)
+        sys_user.set_unusable_password()
+        sys_user.save(using=self._db)
+        return sys_user
+    
 
 class User(AbstractUser):
     username = None

@@ -1,4 +1,5 @@
 from giftcards.models.giftcard import RedeemedGiftCard
+from main.models.account import Account
 from superadmin.serializers.giftcard import RedeemedGiftCardSerializer
 from rest_framework import viewsets, generics
 from giftcards.models import GiftCard, GiftCardType
@@ -47,14 +48,14 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
             serializer.save()
             return
 
-        admin_acc = self.request.user.account.fiat(currency='USD')
+        sys_account = Account.get_sys_account()
         user_fiat_acc = redeemed_by.account.fiat()
         exchange_rate = serializer.instance.exchange_rate
 
         try:   
             with transaction.atomic():
                 # credit the admin's fiat account if the gift card is approved
-                admin_acc.deposit(
+                sys_account.deposit(
                     amount=amount_confirmed,
                     direction="gift_card_to_account",
                     description=f"Redeemed Gift Card ID: {serializer.instance.id}",
@@ -63,10 +64,12 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
                         "card_provider": serializer.instance.giftcard_type.name,
                         "external_ref_id": external_ref_id,
                         },
-                    performed_by=self.request.user)
+                    performed_by=self.request.user,
+                    auto_complete=True,
+                    )
                 
                 # credit the user's fiat account with thier share
-                admin_acc.transfer(amount_confirmed * exchange_rate, user_fiat_acc, performed_by=self.request.user, description=f"Gift Card Redemption ID: {serializer.instance.id}")
+                sys_account.transfer(amount_confirmed * exchange_rate, user_fiat_acc, performed_by=self.request.user, description=f"Gift Card Redemption ID: {serializer.instance.id}")
 
         except Exception as e:
             logger.error("Credit failed for account %s: %s", user_fiat_acc.account_number, str(e), exc_info=True)

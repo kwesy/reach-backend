@@ -48,6 +48,14 @@ class Account(models.Model):
         ('LTC', 'Litecoin'),
     )
 
+    ACCOUNT_ROLE = (
+        ('asset', 'Asset'), # platform's cash accounts are assets
+        ('user', 'User (Liability)'), # users' balances are liabilities to the platform
+        ('revenue', 'Revenue'), # platform's revenue accounts
+        ('expenses', 'Expenses'), # platform's expense accounts
+        ('suspense', 'Suspense'), # temporary holding accounts
+    )
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     account_number = models.CharField(max_length=11, unique=True, editable=False, default=generate_account_number)
     owner = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, related_name="%(class)s")
@@ -61,6 +69,7 @@ class Account(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
+    account_role = models.CharField(max_length=10, choices=ACCOUNT_ROLE, default='user')
 
     class Meta:
         indexes = [
@@ -86,6 +95,21 @@ class Account(models.Model):
             except IntegrityError:
                 # Collision happened, generate a new account number and retry
                 self.account_number = generate_account_number()
+
+    @classmethod
+    def get_sys_account(cls, currency='USD'):
+        """Returns the platform's main account for the specified currency."""
+        return cls.objects.filter(fiataccount__isnull=False, currency=currency, owner__role='sys', account_role='asset').first()
+    
+    @classmethod
+    def get_sys_revenue_account(cls, currency='USD'):
+        """Returns the platform's revenue account for the specified currency."""
+        return cls.objects.filter(fiataccount__isnull=False, currency=currency, owner__role='sys', account_role='revenue').first()
+    
+    @classmethod
+    def get_sys_suspense_account(cls, currency='USD'):
+        """Returns the platforms's suspense account for the specified currency."""
+        return cls.objects.filter(fiataccount__isnull=False, currency=currency, owner__role='sys', account_role='suspense').first()
 
     def to_decimal(self, value):
         if not isinstance(value, Decimal):
@@ -239,7 +263,7 @@ class Account(models.Model):
                     account=self,
                     destination_account=self,
                     transaction_type='adjustment',
-                    amount=amount,
+                    amount=-amount, # negative amount for debit
                     status='completed',
                     performed_by=performed_by,
                     description=description,
@@ -263,6 +287,44 @@ class Account(models.Model):
                 metadata={},
                 fee=Decimal('0'),
             )
+            raise e
+        
+    def charge_fee(self, fee_amount, description="Withdrawal Fee", performed_by=None) -> 'AccountTransaction':
+        """Charges a fee from the account and credits it to the platform revenue account."""
+        fee_amount = self.quantize(fee_amount)
+        if fee_amount <= 0:
+            raise ValueError("Fee amount must be positive.")
+
+        if fee_amount > self.balance:
+            raise ValueError("Insufficient balance to charge fee.")
+
+        revenue_account = Account.get_sys_revenue_account(currency=self.currency)
+        if not revenue_account:
+            raise ValueError("Platform revenue account not found.")
+
+        try:
+            with transaction.atomic():
+                self.subtract_balance(fee_amount)
+
+                revenue_account.add_balance(fee_amount)
+
+                tx = AccountTransaction.objects.record(
+                    account=self,
+                    destination_account=revenue_account,
+                    transaction_type='fee',
+                    amount=fee_amount,
+                    status='completed',
+                    performed_by=performed_by,
+                    description=description,
+                    direction=None,
+                    currency=self.currency,
+                    metadata={},
+                    fee=Decimal('0'),
+                )
+                return tx
+            
+        except Exception as e:
+            logger.error("Fee charge failed for account %s: %s", self.account_number, str(e), exc_info=True)
             raise e
 
     def transfer(self, amount, destination_account, performed_by=None, description="Transfer"):
@@ -298,9 +360,9 @@ class Account(models.Model):
                     description=description,
                     direction='wallet_to_wallet',
                     currency=self.currency,
-                    metadata=None,
+                    metadata={},
                     fee=Decimal('0'),
-                    external_details=None,
+                    external_party_details={},
                 )
         except Exception as e:
             logger.error("Transfer failed for %s: %s", self.account_number, str(e), exc_info=True)
@@ -316,7 +378,7 @@ class Account(models.Model):
                 currency=self.currency,
                 metadata=None,
                 fee=Decimal('0'),
-                external_details=None,
+                external_party_details=None,
             )
             raise e
 
@@ -336,7 +398,7 @@ class Account(models.Model):
                     amount=amount,
                     status='completed' if auto_complete else 'pending',
                     performed_by=performed_by,
-                    external_details=external_details,
+                    external_party_details=external_details,
                     description=description,
                     direction=direction,
                     currency=self.currency,
@@ -362,8 +424,10 @@ class Account(models.Model):
             )
             raise e
 
-    def withdraw(self, amount, direction, external_details=None, performed_by=None, description="Withdrawal", auto_complete=True):
+    def withdraw(self, amount, direction, fee=0.01, external_details=None, performed_by=None, description="Withdrawal", auto_complete=True):
         amount = self.quantize(amount)
+        fee = self.quantize(fee)
+        external_fee = self.quantize(amount * 0.01) #TODO: calculate external fee properly
 
         if not self.transfer_allowed or not self.is_active:
             raise ValueError("Withdrawals are not allowed for this account.")
@@ -378,24 +442,29 @@ class Account(models.Model):
         monthly_total = self.get_monthly_transferred_amount()
         limit_per_txn = self.quantize(self.limit_per_transaction)
 
-        if daily_total + amount > self.daily_transfer_limit:
+        if daily_total + (amount + fee + external_fee) > self.daily_transfer_limit:
             raise ValueError("Daily transfer limit exceeded.")
 
-        if monthly_total + amount > self.monthly_transfer_limit:
+        if monthly_total + (amount + fee + external_fee) > self.monthly_transfer_limit:
             raise ValueError("Monthly transfer limit exceeded.")
 
-        if amount > limit_per_txn:
+        if (amount + fee + external_fee) > limit_per_txn:
             raise ValueError("Withdrawal amount exceeds single transaction limit.")
 
         try:
             with transaction.atomic():
+
+                # Initialize fee_tx to None
+                fee_tx = None
                 
                 if auto_complete:
-                    self.subtract_balance(amount)
-                    self.save()
+                    self.subtract_balance(amount + external_fee)
                     status = 'completed'
                 else:
                     status = 'pending'
+
+                if fee > 0: # credit internal fee to platform revenue account
+                    fee_tx = self.charge_fee(fee)
 
                 AccountTransaction.objects.record(
                     account=self,
@@ -404,12 +473,17 @@ class Account(models.Model):
                     amount=amount,
                     status=status,
                     performed_by=performed_by,
-                    external_details=external_details,
+                    external_party_details=external_details,
                     description=description,
                     direction=direction,
                     currency=self.currency,
-                    metadata={},
-                    fee=Decimal('0'),
+                    metadata={
+                        'external_fee': str(external_fee),
+                        **(
+                            {'fee_tx': fee_tx.id} if fee > 0 else {} # include fee_tx only if fee was charged
+                        )
+                    },
+                    fee=fee,
                 )
         except Exception as e:
             logger.error("Withdrawal failed for account %s: %s", self.account_number, str(e), exc_info=True)
@@ -425,7 +499,7 @@ class Account(models.Model):
                 direction=direction,
                 currency=self.currency,
                 metadata={},
-                fee=Decimal('0'),
+                fee=fee,
             )
             raise e
 
@@ -457,9 +531,9 @@ class TransactionManager(models.Manager):
         description: str,
         direction: str,
         currency: str,
-        fee: Decimal = Decimal('0'),     
-        metadata: dict = None,
-        external_details: dict = None,
+        fee: Decimal = Decimal('0'),
+        metadata: dict = {},
+        external_party_details: dict = {},
         status:str = 'pending',
     ):
         """Creates a double-entry transaction ledger validation."""
@@ -472,41 +546,107 @@ class TransactionManager(models.Manager):
                 amount=amount,
                 status=status,
                 performed_by=performed_by,
-                external_party_details=external_details,
+                external_party_details=external_party_details,
                 description=description,
                 direction=direction,
                 fee=fee,
                 metadata=metadata or {},
                 currency=currency,
             )
+        
+        sys_account = Account.get_sys_account(currency=currency)
+        sys_revenue_account = Account.get_sys_revenue_account(currency=currency)
+        sys_suspense_account = Account.get_sys_suspense_account(currency=currency)
 
         # Build ledger entries
         entries = []
 
-        if account == destination_account and transaction_type == 'adjustment':
-            # Single entry for adjustments to self
-            entries.append(Ledger(transaction=tx, account=account, entry_type="credit", amount=amount, currency=currency))
-        elif account == destination_account:
-            # deposit
-            entries.append(Ledger(transaction=tx, account=account, entry_type="credit", amount=amount, currency=currency))
-        elif account and not destination_account:
-            # withdrawal
-            entries.append(Ledger(transaction=tx, account=account, entry_type="debit", amount=amount, currency=currency))
-        else:
-            # Debit from sender
-            entries.append(Ledger(transaction=tx, account=account, entry_type="debit", amount=amount, currency=currency))
+        # Define the fee amount for clarity (assuming it's passed in metadata if applicable)
+        external_fee_amount = metadata.get('external_fee', 0)
+        principal_amount = amount # 'amount' is generally the principal/base amount
 
-            # Credit to receiver
-            entries.append(Ledger(transaction=tx, account=destination_account, entry_type="credit", amount=amount, currency=currency))
+        # --- SCENARIO 1: Fee Transaction (TXN-B) ---
+        if transaction_type == 'fee':
+            # This assumes a standalone transaction for the internal fee.
+            # Debit: Decrease Liability to User (User's balance goes down)
+            entries.append(Ledger(
+                transaction=tx, account=account, entry_type="debit", amount=principal_amount
+            ))
+            # Credit: Increase Revenue (Platform earns income)
+            entries.append(Ledger(
+                transaction=tx, account=sys_revenue_account, entry_type="credit", amount=principal_amount
+            ))
+
+        # --- SCENARIO 2: Deposit ---
+        elif transaction_type == 'deposit':
+            # Deposit (User deposits into their own account, usually identified by type)
+            # Debit: Increase Platform Cash (Asset)
+            entries.append(Ledger(
+                transaction=tx, account=sys_account, entry_type="debit", amount=principal_amount
+            )) 
+            # Credit: Increase Liability to User (Liability)
+            entries.append(Ledger(
+                transaction=tx, account=destination_account, entry_type="credit", amount=principal_amount
+            )) 
+            # Note: If a deposit fee exists, it must be handled in a separate 'fee' transaction (Scenario 1).
+
+        # --- SCENARIO 3: Withdrawal (TXN-A) ---
+        elif transaction_type == 'withdrawal':
+            # Withdrawal logic handles principal + external fee paid by user (if applicable)
+            total_cash_outflow = principal_amount + external_fee_amount
+            
+            # Debit: Decrease Liability to User (User's balance goes down by cash out + external fee)
+            entries.append(Ledger(
+                transaction=tx, account=account, entry_type="debit", amount=total_cash_outflow
+            )) 
+            # Credit: Decrease Platform Cash (Asset goes down)
+            entries.append(Ledger(
+                transaction=tx, account=sys_account, entry_type="credit", amount=total_cash_outflow
+            )) 
+            # Note: The internal fee must be handled by a separate 'fee' transaction (Scenario 1).
+
+        # --- SCENARIO 4: Transfer (User A to User B) ---
+        elif transaction_type == 'transfer':
+            # Debit: Decrease Liability to Sender (Liability)
+            entries.append(Ledger(
+                transaction=tx, account=account, entry_type="debit", amount=principal_amount
+            )) 
+            # Credit: Increase Liability to Receiver (Liability)
+            entries.append(Ledger(
+                transaction=tx, account=destination_account, entry_type="credit", amount=principal_amount
+            ))
+
+        # --- SCENARIO 5: Adjustment (UP or DOWN) ---
+        elif transaction_type == 'adjustment':
+            # Adjustment MUST be balanced. Assuming adjustment account is provided or inferred.
+            # We use a Suspense account (4999) for generic platform adjustments.
+            sys_suspense_account = Account.get_sys_suspense_account() # Assumed function/variable
+
+            # If the user balance needs to increase (e.g., reversing an error)
+            if amount > 0:
+                # Debit: Suspense (Temporary Asset/Expense) | Credit: User Liability (Increase user balance)
+                entries.append(Ledger(transaction=tx, account=sys_suspense_account, entry_type="debit", amount=principal_amount))
+                entries.append(Ledger(transaction=tx, account=destination_account, entry_type="credit", amount=principal_amount))
+            # If the user balance needs to decrease (e.g., recovering an overpayment)
+            else:
+                # Debit: User Liability (Decrease user balance) | Credit: Suspense (Temporary Liability/Revenue)
+                entries.append(Ledger(transaction=tx, account=account, entry_type="debit", amount=abs(principal_amount)))
+                entries.append(Ledger(transaction=tx, account=sys_suspense_account, entry_type="credit", amount=abs(principal_amount)))
+            
+        else:
+            raise ValidationError("Invalid transaction type.")
+
+
+        # --- VALIDATION ---
+        # Validate double-entry
+        debit_sum = sum(e.amount for e in entries if e.entry_type == "debit")
+        credit_sum = sum(e.amount for e in entries if e.entry_type == "credit")
+        if debit_sum != credit_sum:
+            # Use a try/finally block around bulk_create and validation in a real ORM setup
+            raise ValidationError(f"Ledger imbalance: debits={debit_sum}, credits={credit_sum}. Transaction {tx.pk} is invalid.")
 
         # Save entries
         Ledger.objects.bulk_create(entries)
-
-        # Validate double-entry
-        # debit_sum = sum(e.amount for e in entries if e.entry_type == "debit")
-        # credit_sum = sum(e.amount for e in entries if e.entry_type == "credit")
-        # if debit_sum != credit_sum:
-        #     raise ValidationError(f"Ledger imbalance: debits={debit_sum}, credits={credit_sum}")
 
         return tx
 
@@ -516,6 +656,7 @@ class AccountTransaction(TimeStampedModel):
         ('withdrawal', 'Withdrawal'),
         ('transfer', 'Transfer'),
         ('adjustment', 'Adjustment'),
+        ('fee', 'Fee'),
     )
 
     STATUS_CHOICES = (
