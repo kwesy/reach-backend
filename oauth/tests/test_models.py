@@ -130,9 +130,6 @@ class TestUserModel:
             password="password123",
             phone_number="1234567890",
         )
-        assert user.balance == 0.00
-        assert user.transfer_allowed is True
-        assert user.transfer_limit == 1000.00
         assert user.is_active is True
         assert user.email_verified is False
         assert user.mfa_enabled is False

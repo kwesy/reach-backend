@@ -15,7 +15,6 @@ class TestUserSerializer:
             last_name="Doe",
             email_verified=True,
             is_active=True,
-            balance=500.00,
         )
         serializer = UserSerializer(user)
         data = serializer.data
@@ -27,7 +26,6 @@ class TestUserSerializer:
         assert data["last_name"] == "Doe"
         assert data["email_verified"] is True
         assert data["is_active"] is True
-        assert data["balance"] == "500.00"  # Decimal fields are serialized as strings
         assert data["role"] == "user"  # Default role
 
     def test_user_serializer_update(self):
@@ -52,7 +50,6 @@ class TestUserSerializer:
         assert updated_user.last_name == "Smith"
 
         # Forbidden fields should remain unchanged
-        assert updated_user.balance == 0
         assert updated_user.email == "testuser@example.com"
         assert updated_user.phone_number == "1234567890"
         assert updated_user.mfa_enabled is False

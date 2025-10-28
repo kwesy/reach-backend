@@ -194,10 +194,10 @@ LOGGING = {
             'filename': BASE_DIR / '../logs/requests.log',
             'formatter': 'verbose',
         },
-        'anypay_file': {
+        'bulkclix_file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': BASE_DIR / '../logs/anypay.log',
+            'filename': BASE_DIR / '../logs/services.log',
             'formatter': 'verbose',
         },
         'error_file': {
@@ -219,8 +219,8 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
-        'anypay': {
-            'handlers': ['anypay_file'],
+        'bulkclix': {
+            'handlers': ['bulkclix_file'],
             'level': 'INFO',
             'propagate': False,
         },

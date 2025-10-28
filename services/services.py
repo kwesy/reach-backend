@@ -11,7 +11,7 @@ from django.conf import settings
 from celery import shared_task
 
 
-logger = logging.getLogger("anypay")
+logger = logging.getLogger("bulkclix")
 
 def send_sms(recipients: list, message: str) -> bool:
     """
@@ -72,7 +72,7 @@ def check_sms_balance():
         print(f"Error sending SMS: {e}")
         return False
     
-def charge_mobile_money(amount:int, phone_number:str, provider:str, email:str=None, metadata:dict=None):
+def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_id, ):
     """
     Debit the account by the specified amount via mobile money.
     
@@ -82,24 +82,22 @@ def charge_mobile_money(amount:int, phone_number:str, provider:str, email:str=No
     Returns:
         bool: True if the transaction was successful, False otherwise.
     """
-    url = "https://api.AnyPay.co/charge"
-    api_key = config("AnyPay_SECRET_KEY")
+    url = "https://api.bulkclix.com/api/v1/payment-api/momopay"
+    api_key = config("BULKCLIX_API_KEY")
 
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "x-api-key": api_key,
+        "Accept": "application/json",
         "Content-Type": "application/json"
     }
 
     payload = {
-        "email": email or "customer@osx.com",
-        "amount": int(amount*100),  # AnyPay expects amount in the smallest currency unit (pesewa)
-        "currency": "GHS",
-        "mobile_money": {
-            "phone": phone_number,
-            "provider": provider
-        },
-        "metadata": metadata
-        # "reference": id # uncomment to provide your own reference
+        "amount":2,
+        "phone_number":phone_number,
+        "network":provider, # MTN , TELECEL, AIRTELTIGO
+        "transaction_id": transaction_id, # Unique transaction ID from your system
+        "callback_url": "https://464791165650.ngrok-free.app/api/v1/webhooks/bulkclix/gc/", # Your callback URL to receive transaction status
+        "reference":""
     }
 
     try:
@@ -107,16 +105,16 @@ def charge_mobile_money(amount:int, phone_number:str, provider:str, email:str=No
         response.raise_for_status()
     except requests.exceptions.HTTPError:
         if response.status_code == 401:
-            logger.error("AnyPay API key Invalid: %s", response.json())
+            logger.error("Bulkclix API key Invalid: %s", response.json())
         elif response.status_code == 400:
-            logger.error("AnyPay Validation error: %s", response.json())
+            logger.error("Bulkclix Validation error: %s", response.json())
         
-        raise APIException("internal error") # AnyPay error
+        raise APIException("internal error") # Bulkclix error
     except requests.exceptions.Timeout:
-        logger.error("AnyPay request timed out.")
+        logger.error("Bulkclix request timed out.")
         raise APIException("internal error")
     except requests.exceptions.ConnectionError:
-        logger.error("Failed to connect to AnyPay.")
+        logger.error("Failed to connect to Bulkclix.")
         raise APIException("internal error")
     except Exception as e:
         logger.error("Unexpected error: %s", str(e), exc_info=True)
@@ -124,9 +122,9 @@ def charge_mobile_money(amount:int, phone_number:str, provider:str, email:str=No
 
     data = response.json()
 
-    # If status is False in AnyPay response, treat as ValidationError
+    # If status is False in Bulkclix response, treat as ValidationError
     if not data.get("status", False):
-        logger.error("AnyPay returned an error: %s", data)
+        logger.error("Bulkclix returned an error: %s", data)
         raise ValidationError(data.get("message", "Unknown error"))
 
     return data
