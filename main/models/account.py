@@ -160,7 +160,7 @@ class Account(models.Model):
         # lock row for safe update
         locked_account = Account.objects.select_for_update().get(pk=self.pk)
         if locked_account.balance - amount < 0:
-            raise ValueError("Balance cannot go negative.")
+            raise InsufficientFundsError("Balance cannot go negative.")
         locked_account.balance = self.quantize(locked_account.balance - amount)
         locked_account.save()
         self.refresh_from_db(fields=['balance'])
@@ -215,6 +215,8 @@ class Account(models.Model):
         try:
             with transaction.atomic():
                 self.add_balance(amount)
+                sys_suspense_account = Account.get_sys_suspense_account()
+                self.subtract_balance(amount)
 
                 AccountTransaction.objects.record(
                     account=self,
@@ -253,11 +255,13 @@ class Account(models.Model):
             raise ValueError("Debit amount must be positive.")
 
         if amount > self.balance:
-            raise ValueError("Insufficient balance for debit.")
+            raise InsufficientFundsError("Insufficient balance for debit.")
 
         try:
             with transaction.atomic():
                 self.subtract_balance(amount)
+                sys_suspense_account = Account.get_sys_suspense_account() # Assumed function/variable
+                sys_suspense_account.add_balance(amount)
 
                 AccountTransaction.objects.record(
                     account=self,
@@ -296,11 +300,11 @@ class Account(models.Model):
             raise ValueError("Fee amount must be positive.")
 
         if fee_amount > self.balance:
-            raise ValueError("Insufficient balance to charge fee.")
+            raise InsufficientFundsError("Insufficient balance to charge fee.")
 
         revenue_account = Account.get_sys_revenue_account(currency=self.currency)
         if not revenue_account:
-            raise ValueError("Platform revenue account not found.")
+            raise SystemAccountError("Platform revenue account not found.")
 
         try:
             with transaction.atomic():
@@ -334,10 +338,10 @@ class Account(models.Model):
             raise ValueError("Transfer amount exceeds limits or insufficient balance or transfers disabled.")
 
         if not destination_account or not destination_account.is_active:
-            raise ValueError("Invalid or inactive destination account.")
+            raise TransfersNotAllowedError("Invalid or inactive destination account.")
 
         if self.currency != destination_account.currency:
-            raise ValueError("Currency mismatch between source and destination accounts.")
+            raise TransfersNotAllowedError("Currency mismatch between source and destination accounts.")
 
         try:
             # Ensure atomicity of balance updates and transaction creation
@@ -430,26 +434,26 @@ class Account(models.Model):
         external_fee = self.quantize(amount * 0.01) #TODO: calculate external fee properly
 
         if not self.transfer_allowed or not self.is_active:
-            raise ValueError("Withdrawals are not allowed for this account.")
+            raise TransfersNotAllowedError("Withdrawals are not allowed for this account.")
 
         if amount <= 0:
             raise ValueError("Withdrawal amount must be greater than zero.")
 
         if amount > self.balance:
-            raise ValueError("Insufficient balance.")
+            raise InsufficientFundsError("Insufficient balance.")
 
         daily_total = self.get_daily_transferred_amount()
         monthly_total = self.get_monthly_transferred_amount()
         limit_per_txn = self.quantize(self.limit_per_transaction)
 
         if daily_total + (amount + fee + external_fee) > self.daily_transfer_limit:
-            raise ValueError("Daily transfer limit exceeded.")
+            raise TransferLimitExceededError("Daily transfer limit exceeded.")
 
         if monthly_total + (amount + fee + external_fee) > self.monthly_transfer_limit:
-            raise ValueError("Monthly transfer limit exceeded.")
+            raise TransferLimitExceededError("Monthly transfer limit exceeded.")
 
         if (amount + fee + external_fee) > limit_per_txn:
-            raise ValueError("Withdrawal amount exceeds single transaction limit.")
+            raise TransferLimitExceededError("Withdrawal amount exceeds single transaction limit.")
 
         try:
             with transaction.atomic():
@@ -620,7 +624,6 @@ class TransactionManager(models.Manager):
         elif transaction_type == 'adjustment':
             # Adjustment MUST be balanced. Assuming adjustment account is provided or inferred.
             # We use a Suspense account (4999) for generic platform adjustments.
-            sys_suspense_account = Account.get_sys_suspense_account() # Assumed function/variable
 
             # If the user balance needs to increase (e.g., reversing an error)
             if amount > 0:
@@ -715,3 +718,16 @@ class Ledger(models.Model):
 
     def __str__(self):
         return f"{self.entry_type.upper()} {self.amount} {self.account.currency} → {self.account}"
+
+
+class InsufficientFundsError(Exception):
+    pass
+
+class TransferLimitExceededError(Exception):
+    pass
+
+class TransfersNotAllowedError(Exception):
+    pass
+
+class SystemAccountError(Exception):
+    pass
