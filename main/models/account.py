@@ -126,14 +126,46 @@ class Account(models.Model):
 
     def add_balance(self, amount):
         """
+        Update balance without explicit lock,
+        and returns the updated balance.
+        Must be called inside a transaction.atomic() block.
+        """
+        if not transaction.get_connection().in_atomic_block:
+            raise ImproperlyConfigured("add_balance() must be called inside a transaction.atomic() block.")
+
+        amount = self.quantize(amount)
+
+        self.balance = self.quantize(self.balance + amount)
+        self.save(update_fields=["balance"])
+        return self.balance
+    
+    def subtract_balance(self, amount):
+        """
+        Update balance without explicit lock,
+        and returns the updated balance.
+        Must be called inside a transaction.atomic() block.
+        """
+        if not transaction.get_connection().in_atomic_block:
+            raise ImproperlyConfigured("subtract_balance() must be called inside a transaction.atomic() block.")
+
+        amount = self.quantize(amount)
+        if self.balance - amount < 0 and self.account_role != 'suspense':
+            raise InsufficientFundsError("Balance cannot go negative.")
+
+        self.balance = self.quantize(self.balance - amount)
+        self.save(update_fields=["balance"])
+        return self.balance
+
+    def add_balance_safe(self, amount):
+        """
         Safely locks an account row, updates balance,
-        and returns the updated account.
+        and returns the updated balance.
         Must be called inside a transaction.atomic() block.
         """
         # Ensure we are inside an atomic transaction
         if not transaction.get_connection().in_atomic_block:
             raise ImproperlyConfigured(
-                "add_balance() must be called inside a transaction.atomic() block."
+                "add_balance_safe() must be called inside a transaction.atomic() block."
             )
     
         amount = self.quantize(amount)
@@ -144,16 +176,16 @@ class Account(models.Model):
         self.refresh_from_db(fields=['balance'])
         return locked_account.balance
 
-    def subtract_balance(self, amount):
+    def subtract_balance_safe(self, amount):
         """
         Safely locks an account row, updates balance,
-        and returns the updated account.
+        and returns the updated balance.
         Must be called inside a transaction.atomic() block.
         """
         # Ensure we are inside an atomic transaction
         if not transaction.get_connection().in_atomic_block:
             raise ImproperlyConfigured(
-                "subtract_balance() must be called inside a transaction.atomic() block."
+                "subtract_balance_safe() must be called inside a transaction.atomic() block."
             )
         
         amount = self.quantize(amount)
@@ -214,9 +246,9 @@ class Account(models.Model):
 
         try:
             with transaction.atomic():
-                self.add_balance(amount)
+                self.add_balance_safe(amount)
                 sys_suspense_account = Account.get_sys_suspense_account()
-                sys_suspense_account.subtract_balance(amount)
+                sys_suspense_account.subtract_balance_safe(amount)
 
                 AccountTransaction.objects.record(
                     account=self,
@@ -259,9 +291,9 @@ class Account(models.Model):
 
         try:
             with transaction.atomic():
-                self.subtract_balance(amount)
+                self.subtract_balance_safe(amount)
                 sys_suspense_account = Account.get_sys_suspense_account() # Assumed function/variable
-                sys_suspense_account.add_balance(amount)
+                sys_suspense_account.add_balance_safe(amount)
 
                 AccountTransaction.objects.record(
                     account=self,
@@ -308,9 +340,9 @@ class Account(models.Model):
 
         try:
             with transaction.atomic():
-                self.subtract_balance(fee_amount)
+                self.subtract_balance_safe(fee_amount)
 
-                revenue_account.add_balance(fee_amount)
+                revenue_account.add_balance_safe(fee_amount)
 
                 tx = AccountTransaction.objects.record(
                     account=self,
@@ -393,7 +425,7 @@ class Account(models.Model):
 
         try:
             with transaction.atomic():
-                self.add_balance(amount)
+                self.add_balance_safe(amount)
 
                 AccountTransaction.objects.record(
                     account=self,
@@ -462,7 +494,7 @@ class Account(models.Model):
                 fee_tx = None
                 
                 if auto_complete:
-                    self.subtract_balance(amount + external_fee)
+                    self.subtract_balance_safe(amount + external_fee)
                     status = 'success'
                 else:
                     status = 'pending'
