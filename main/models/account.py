@@ -159,7 +159,7 @@ class Account(models.Model):
         amount = self.quantize(amount)
         # lock row for safe update
         locked_account = Account.objects.select_for_update().get(pk=self.pk)
-        if locked_account.balance - amount < 0:
+        if locked_account.balance - amount < 0 and locked_account.account_role != 'suspense': # for now, only suspense account can go negative (temporary)
             raise InsufficientFundsError("Balance cannot go negative.")
         locked_account.balance = self.quantize(locked_account.balance - amount)
         locked_account.save()
@@ -216,7 +216,7 @@ class Account(models.Model):
             with transaction.atomic():
                 self.add_balance(amount)
                 sys_suspense_account = Account.get_sys_suspense_account()
-                self.subtract_balance(amount)
+                sys_suspense_account.subtract_balance(amount)
 
                 AccountTransaction.objects.record(
                     account=self,
