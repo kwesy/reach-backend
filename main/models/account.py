@@ -335,7 +335,7 @@ class Account(models.Model):
         amount = self.quantize(amount)
 
         if not self.can_transfer(amount):
-            raise ValueError("Transfer amount exceeds limits or insufficient balance or transfers disabled.")
+            raise TransfersNotAllowedError("Transfer amount exceeds limits or insufficient balance or transfers disabled.")
 
         if not destination_account or not destination_account.is_active:
             raise TransfersNotAllowedError("Invalid or inactive destination account.")
@@ -428,10 +428,10 @@ class Account(models.Model):
             )
             raise e
 
-    def withdraw(self, amount, direction, fee=0.01, external_details=None, performed_by=None, description="Withdrawal", auto_complete=True):
+    def withdraw(self, amount, direction, fee_rate=0.01, external_details=None, performed_by=None, description="Withdrawal", auto_complete=True):
         amount = self.quantize(amount)
-        fee = self.quantize(fee)
-        external_fee = self.quantize(amount * 0.01) #TODO: calculate external fee properly
+        fee = self.quantize(amount * Decimal(fee_rate))
+        external_fee = self.quantize(amount * Decimal('0.01')) #TODO: calculate external fee properly
 
         if not self.transfer_allowed or not self.is_active:
             raise TransfersNotAllowedError("Withdrawals are not allowed for this account.")
@@ -484,7 +484,7 @@ class Account(models.Model):
                     metadata={
                         'external_fee': str(external_fee),
                         **(
-                            {'fee_tx': fee_tx.id} if fee > 0 else {} # include fee_tx only if fee was charged
+                            {'fee_tx': str(fee_tx.id)} if fee > 0 else {} # include fee_tx only if fee was charged
                         )
                     },
                     fee=fee,
@@ -566,7 +566,7 @@ class TransactionManager(models.Manager):
         entries = []
 
         # Define the fee amount for clarity (assuming it's passed in metadata if applicable)
-        external_fee_amount = metadata.get('external_fee', 0)
+        external_fee_amount = Decimal(metadata.get('external_fee', 0))
         principal_amount = amount # 'amount' is generally the principal/base amount
 
         # --- SCENARIO 1: Fee Transaction (TXN-B) ---
