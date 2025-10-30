@@ -12,6 +12,9 @@ from main.models.account import (
     TransferLimitExceededError,
     SystemAccountError,
 )
+import logging
+
+logger = logging.getLogger('error')
 
 # ---------------------------
 # Common fixture for all tests
@@ -70,6 +73,17 @@ class TestAccountTransactions:
     # ---------------------
     # Account instance methods
     # ---------------------
+
+    def test_quantize(self, setup_users_and_accounts):
+        acc = setup_users_and_accounts
+        user = acc['regular_user_a']
+        amount = 5
+        currencies = ['USD', 'GHS', 'BTC', 'ETH', 'XRP', 'LTC']
+        excepted_output = ['5.00', '5.00', '5.00000000', '5.000000000000000000', '5.000000', '5.00000000']
+
+        for i, c in enumerate(currencies):
+            account = Account.objects.create(owner=user, currency=c)
+            assert account.quantize(amount) == account.to_decimal(excepted_output[i]) 
 
     def test_deposit_method(self, setup_users_and_accounts):
         acc = setup_users_and_accounts

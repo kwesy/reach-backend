@@ -33,7 +33,7 @@ class Account(models.Model):
     CURRENCY_DECIMAL_PLACES = {
         'USD': 2,
         'GHS': 2,
-        'BTC': 18,
+        'BTC': 8,
         'ETH': 18,
         'XRP': 6,
         'LTC': 8,
