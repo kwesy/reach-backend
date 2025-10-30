@@ -37,12 +37,24 @@ def setup_users_and_accounts():
     sys_asset_account = FiatAccount.objects.create(
         owner=sys_user, currency="USD", account_role="asset", balance=Decimal("100000")
     )
+    sys_asset_account_GHS = FiatAccount.objects.create(
+        owner=sys_user, currency="GHS", account_role="asset", balance=Decimal("100000")
+    )
+
     sys_revenue_account = FiatAccount.objects.create(
         owner=sys_user, currency="USD", account_role="revenue", balance=Decimal("0")
     )
+    sys_revenue_account_GHS = FiatAccount.objects.create(
+        owner=sys_user, currency="GHS", account_role="revenue", balance=Decimal("0")
+    )
+
     sys_suspense_account = FiatAccount.objects.create(
         owner=sys_user, currency="USD", account_role="suspense", balance=Decimal("0")
     )
+    sys_suspense_account_GHS = FiatAccount.objects.create(
+        owner=sys_user, currency="GHS", account_role="suspense", balance=Decimal("0")
+    )
+
     user_account_A = FiatAccount.objects.create(
         owner=regular_user_A, currency="USD", account_role="user", balance=Decimal("500")
     )
@@ -69,6 +81,46 @@ def setup_users_and_accounts():
 # --------------------------------------------------
 @pytest.mark.django_db
 class TestAccountTransactions:
+
+    # ---------------------
+    # Account class methods
+    # ---------------------
+
+    def test_get_sys_account(self, setup_users_and_accounts):
+        sys_account_USD_asset = Account.get_sys_account()
+        sys_account_GHS_asset = Account.get_sys_account(currency='GHS')
+
+        assert sys_account_USD_asset.account_role == 'asset'
+        assert sys_account_USD_asset.owner.role == 'sys'
+        assert sys_account_USD_asset.currency == 'USD'
+
+        assert sys_account_GHS_asset.account_role == 'asset'
+        assert sys_account_GHS_asset.owner.role == 'sys'
+        assert sys_account_GHS_asset.currency == 'GHS'
+
+    def test_get_sys_revenue_account(self, setup_users_and_accounts):
+        sys_account_USD_revenue = Account.get_sys_revenue_account()
+        sys_account_GHS_revenue = Account.get_sys_revenue_account(currency='GHS')
+
+        assert sys_account_USD_revenue.account_role == 'revenue'
+        assert sys_account_USD_revenue.owner.role == 'sys'
+        assert sys_account_USD_revenue.currency == 'USD'
+
+        assert sys_account_GHS_revenue.account_role == 'revenue'
+        assert sys_account_GHS_revenue.owner.role == 'sys'
+        assert sys_account_GHS_revenue.currency == 'GHS'
+
+    def test_get_sys_suspense_account(self, setup_users_and_accounts):
+        sys_account_USD_suspense = Account.get_sys_suspense_account()
+        sys_account_GHS_suspense = Account.get_sys_suspense_account(currency='GHS')
+
+        assert sys_account_USD_suspense.account_role == 'suspense'
+        assert sys_account_USD_suspense.owner.role == 'sys'
+        assert sys_account_USD_suspense.currency == 'USD'
+
+        assert sys_account_GHS_suspense.account_role == 'suspense'
+        assert sys_account_GHS_suspense.owner.role == 'sys'
+        assert sys_account_GHS_suspense.currency == 'GHS'
 
     # ---------------------
     # Account instance methods
