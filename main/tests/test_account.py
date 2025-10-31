@@ -1,3 +1,4 @@
+import uuid
 import pytest
 from decimal import Decimal
 from django.core.exceptions import ValidationError
@@ -137,29 +138,29 @@ class TestAccountTransactions:
             account = Account.objects.create(owner=user, currency=c)
             assert account.quantize(amount) == account.to_decimal(excepted_output[i]) 
 
-    def test_deposit_method(self, setup_users_and_accounts):
+    def test_deposit_method_with_auto_complete(self, setup_users_and_accounts):
         acc = setup_users_and_accounts
         user_account = acc["user_account_a"]
         system_account = acc["sys_asset_account"]
 
-        user_account.deposit(
+        transaction = user_account.deposit(
             amount=Decimal("100"),
             direction="bank_to_account",
             performed_by=acc["regular_user_a"],
             description="Deposit test",
+            auto_complete=True
         )
 
-        transactions = AccountTransaction.objects.filter(account=user_account, transaction_type="deposit")
-
+        assert transaction is not None
+        assert transaction.account == user_account
         assert user_account.balance == Decimal("600")
-        assert transactions.count() == 1
-        assert transactions.first().transaction_type == "deposit"
+        assert transaction.transaction_type == "deposit"
         assert Ledger.objects.filter(account=system_account).count() == 1
         assert Ledger.objects.filter(account=user_account).count() == 1
-        assert Ledger.objects.filter(transaction=transactions.first()).count() == 2
+        assert Ledger.objects.filter(transaction=transaction).count() == 2
         assert Ledger.objects.filter(entry_type="debit").first().account.fiataccount == system_account
         assert Ledger.objects.filter(entry_type="credit").first().account.fiataccount == user_account
-        assert transactions.first().status == "pending"
+        assert transaction.status == "success"
 
     def test_withdraw_method(self, setup_users_and_accounts):
         acc = setup_users_and_accounts
@@ -354,41 +355,414 @@ class TestAccountTransactions:
                 description="Currency mismatch test",
             )
 
-    # ---------------------
-    # Model-level transaction tests (AccountTransaction.record)
-    # ---------------------
 
-    def test_deposit_record(self, setup_users_and_accounts):
-        acc = setup_users_and_accounts
-        user_account = acc["user_account_a"]
+@pytest.mark.django_db
+class TestAccountDeposit:
+    """Tests for Account.deposit() and Account.deposit_confirm() methods."""
 
-        tx = AccountTransaction.objects.record(
+    def test_deposit_creates_pending_transaction(self, setup_users_and_accounts):
+        """Deposit should create a pending transaction and not yet update balance."""
+        account = setup_users_and_accounts["user_account_a"]
+        sys_account = Account.get_sys_account("USD").fiataccount
+
+        initial_balance = account.balance
+        sys_initial_balance = sys_account.balance
+
+        # Perform deposit
+        tx = account.deposit(
+            amount=Decimal("200.00"),
+            performed_by=account.owner,
+            description="Initial deposit",
+            direction="mobile_money_to_account",
+            metadata={}
+        )
+
+        # Refresh from DB
+        account.refresh_from_db()
+        sys_account.refresh_from_db()
+        tx.refresh_from_db()
+
+        # Assertions
+        assert isinstance(tx, AccountTransaction)
+        assert tx.account.fiataccount == account
+        assert tx.transaction_type == "deposit"
+        assert tx.status == "pending"
+        assert tx.amount == Decimal("200.00")
+        assert account.balance == initial_balance  # not yet applied
+        assert sys_account.balance == sys_initial_balance  # not yet applied
+        assert "Initial deposit" in tx.description
+        assert Ledger.objects.count() == 0
+
+    def test_deposit_confirm_success_updates_balance(self, setup_users_and_accounts):
+        """Confirming a pending deposit should update balance and mark success."""
+        user_account = setup_users_and_accounts["user_account_a"]
+        system_account = setup_users_and_accounts["sys_asset_account"]
+
+        initial_balance = user_account.balance
+        sys_initial_balance = system_account.balance
+
+        # Step 1: create a pending deposit
+        tx = user_account.deposit(
+            amount=Decimal("100.00"),
+            performed_by=user_account.owner,
+            description="Test deposit",
+            direction="mobile_money_to_account",
+            metadata={}
+        )
+
+        # Step 2: confirm deposit as successful
+        confirmed_tx = user_account.deposit_confirm(
+            transaction_id=tx.id,
+            status="success",
+            amount=Decimal("100.00"),
+            metadata={"bank_ref": "XYZ123"},
+        )
+
+        # Reload objects
+        user_account.refresh_from_db()
+        system_account.refresh_from_db()
+        confirmed_tx.refresh_from_db()
+
+        # Assertions
+        assert confirmed_tx.status == "success"
+        assert confirmed_tx.metadata == {"bank_ref": "XYZ123"}
+        assert user_account.balance == initial_balance + Decimal("100.00")
+        assert system_account.balance == sys_initial_balance + Decimal("100.00")
+        assert confirmed_tx.account.owner == user_account.owner
+        assert confirmed_tx.transaction_type == "deposit"
+        assert Ledger.objects.filter(account=system_account).count() == 1
+        assert Ledger.objects.filter(account=user_account).count() == 1
+        assert Ledger.objects.filter(transaction=confirmed_tx).count() == 2
+        assert Ledger.objects.filter(entry_type="debit").first().account.fiataccount == system_account
+        assert Ledger.objects.filter(entry_type="credit").first().account.fiataccount == user_account
+
+
+    def test_deposit_confirm_failed_does_not_affect_balance_and_ledger(self, setup_users_and_accounts):
+        """Failed deposit confirmation should not alter balance."""
+        account = setup_users_and_accounts["user_account_a"]
+        system_account = setup_users_and_accounts["sys_asset_account"]
+
+        initial_balance = account.balance
+        sys_initial_balance = system_account.balance
+
+        # Create deposit transaction
+        tx = account.deposit(
+            amount=Decimal("150.00"),
+            performed_by=account.owner,
+            description="Deposit to fail",
+            direction="mobile_money_to_account",
+            metadata={}
+        )
+
+        # Confirm as failed
+        failed_tx = account.deposit_confirm(
+            transaction_id=tx.id,
+            status="failed",
+            amount=Decimal("150.00"),
+            metadata={"reason": "Bank declined"},
+        )
+
+        account.refresh_from_db()
+        system_account.refresh_from_db()
+        failed_tx.refresh_from_db()
+
+        # Assertions
+        assert failed_tx.status == "failed"
+        assert account.balance == initial_balance
+        assert system_account.balance == sys_initial_balance
+        assert Ledger.objects.count() == 0
+
+    def test_deposit_confirm_cannot_process_twice(self, setup_users_and_accounts):
+        """Deposit cannot be confirmed more than once."""
+        account = setup_users_and_accounts["user_account_a"]
+
+        tx = account.deposit(
+            amount=Decimal("50.00"),
+            performed_by=account.owner,
+            description="Double confirm test",
+            direction="mobile_money_to_account",
+            metadata={}
+        )
+
+        # First confirmation succeeds
+        account.deposit_confirm(
+            transaction_id=tx.id,
+            status="success",
+            amount=Decimal("50.00"),
+            metadata={},
+        )
+
+        account.refresh_from_db()
+        first_update_balance = account.balance
+
+        # Second confirmation should fail
+        with pytest.raises(ValidationError, match="already been processed"):
+            account.deposit_confirm(
+                transaction_id=tx.id,
+                status="success",
+                amount=Decimal("50.00"),
+                metadata={},
+            )
+
+        account.refresh_from_db()
+        assert account.balance == first_update_balance
+        Ledger.objects.count() == 2
+
+
+    def test_deposit_confirm_raises_if_amount_too_low(self, setup_users_and_accounts):
+        """Deposit confirmation fails if confirmed amount < original."""
+        account = setup_users_and_accounts["user_account_a"]
+
+        tx = account.deposit(
+            amount=Decimal("200.00"),
+            performed_by=account.owner,
+            description="Insufficient confirm test",
+            direction="mobile_money_to_account",
+            metadata={}
+        )
+
+        with pytest.raises(ValidationError, match="less than the original amount"):
+            account.deposit_confirm(
+                transaction_id=tx.id,
+                status="success",
+                amount=Decimal("150.00"),
+                metadata={},
+            )
+        assert Ledger.objects.count() == 0
+
+
+    def test_deposit_confirm_raises_404_for_nonexistent_tx(self, setup_users_and_accounts):
+        """Should raise 404 if transaction does not exist."""
+        account = setup_users_and_accounts["user_account_a"]
+        fake_id = uuid.uuid4()
+
+        with pytest.raises(Exception):  # Django's Http404
+            account.deposit_confirm(
+                transaction_id=fake_id,
+                status="success",
+                amount=Decimal("100.00"),
+                metadata={},
+            )
+        assert Ledger.objects.count() == 0
+
+
+# | Scenario     | Debit        | Credit         | Validation               |
+# | ------------ | ------------ | -------------- | ------------------------ |
+# | Fee          | User         | System Revenue | Balanced                 |
+# | Deposit      | System Asset | User           | Balanced                 |
+# | Withdrawal   | User         | System Asset   | Includes external fee    |
+# | Transfer     | Sender       | Receiver       | Balanced                 |
+# | Adjustment + | Suspense     | User           | Balanced                 |
+# | Adjustment - | User         | Suspense       | Balanced                 |
+# | Invalid Type | —            | —              | Raises `ValidationError` |
+# | Imbalance    | —            | —              | Raises `ValidationError` |
+
+@pytest.mark.django_db
+class TestLedgerManagerRecord:
+    """Tests for LedgerManager.record() covering all transaction scenarios."""
+
+    def setup_method(self):
+        """Optionally clear ledgers before each test (safety)."""
+        Ledger.objects.all().delete()
+
+    def _create_tx(self, account, tx_type, amount=Decimal("100.00")):
+        """Helper to quickly create a base AccountTransaction."""
+        return AccountTransaction.objects.create(
+            account=account,
+            performed_by=account.owner,
+            transaction_type=tx_type,
+            amount=amount,
+            status="success",
+        )
+
+    def test_fee_transaction_creates_correct_entries(self, setup_users_and_accounts):
+        user_account = setup_users_and_accounts["user_account_a"]
+        sys_revenue_account = Account.get_sys_revenue_account("USD").fiataccount
+
+        tx = self._create_tx(user_account, "fee")
+
+        Ledger.objects.record(
+            tx=tx,
             account=user_account,
-            destination_account=user_account,
-            transaction_type="deposit",
-            amount=Decimal("100"),
-            performed_by=acc["regular_user_a"],
-            description="Deposit via record",
-            direction="bank_to_account",
+            destination_account=None,
+            transaction_type="fee",
+            amount=Decimal("25.00"),
             currency="USD",
         )
 
-        assert tx.status == "pending"
-        assert tx.amount == Decimal("100")
-        assert Ledger.objects.filter(transaction=tx).count() == 2
+        entries = Ledger.objects.filter(transaction=tx)
+        assert entries.count() == 2
 
-    def test_invalid_transaction_type(self, setup_users_and_accounts):
-        acc = setup_users_and_accounts
-        user_account = acc["user_account_a"]
+        debit = entries.get(entry_type="debit")
+        credit = entries.get(entry_type="credit")
 
-        with pytest.raises(ValidationError, match="Invalid transaction type."):
-            AccountTransaction.objects.record(
+        assert debit.account.fiataccount == user_account
+        assert credit.account.fiataccount == sys_revenue_account
+        assert debit.amount == credit.amount == Decimal("25.00")
+
+    def test_deposit_creates_correct_double_entry(self, setup_users_and_accounts):
+        sys_account = Account.get_sys_account("USD").fiataccount
+        user_account = setup_users_and_accounts["user_account_a"]
+
+        tx = self._create_tx(user_account, "deposit")
+
+        Ledger.objects.record(
+            tx=tx,
+            account=sys_account,
+            destination_account=user_account,
+            transaction_type="deposit",
+            amount=Decimal("200.00"),
+            currency="USD",
+        )
+
+        entries = Ledger.objects.filter(transaction=tx)
+        assert entries.count() == 2
+
+        debit = entries.get(entry_type="debit")
+        credit = entries.get(entry_type="credit")
+
+        assert debit.account.fiataccount == sys_account
+        assert credit.account.fiataccount == user_account
+        assert debit.amount == credit.amount == Decimal("200.00")
+
+    def test_withdrawal_creates_correct_double_entry_with_external_fee(self, setup_users_and_accounts):
+        user_account = setup_users_and_accounts["user_account_a"]
+        sys_account = Account.get_sys_account("USD").fiataccount
+
+        tx = self._create_tx(user_account, "withdrawal")
+
+        Ledger.objects.record(
+            tx=tx,
+            account=user_account,
+            destination_account=None,
+            transaction_type="withdrawal",
+            amount=Decimal("100.00"),
+            currency="USD",
+            metadata={"external_fee": "5.00"},
+        )
+
+        entries = Ledger.objects.filter(transaction=tx)
+        assert entries.count() == 2
+
+        debit = entries.get(entry_type="debit")
+        credit = entries.get(entry_type="credit")
+
+        # Total withdrawal amount should include external fee
+        assert debit.amount == credit.amount == Decimal("105.00")
+        assert debit.account.fiataccount == user_account
+        assert credit.account.fiataccount == sys_account
+
+    def test_transfer_creates_balanced_entries(self, setup_users_and_accounts):
+        sender = setup_users_and_accounts["user_account_a"]
+        receiver = setup_users_and_accounts["user_account_b"]
+
+        tx = self._create_tx(sender, "transfer")
+
+        Ledger.objects.record(
+            tx=tx,
+            account=sender,
+            destination_account=receiver,
+            transaction_type="transfer",
+            amount=Decimal("50.00"),
+            currency="USD",
+        )
+
+        entries = Ledger.objects.filter(transaction=tx)
+        assert entries.count() == 2
+
+        debit = entries.get(entry_type="debit")
+        credit = entries.get(entry_type="credit")
+
+        assert debit.account.fiataccount == sender
+        assert credit.account.fiataccount == receiver
+        assert debit.amount == credit.amount == Decimal("50.00")
+
+    def test_adjustment_positive_creates_correct_entries(self, setup_users_and_accounts):
+        sys_suspense = Account.get_sys_suspense_account("USD").fiataccount
+        user_account = setup_users_and_accounts["user_account_a"]
+
+        tx = self._create_tx(user_account, "adjustment", Decimal("25.00"))
+
+        Ledger.objects.record(
+            tx=tx,
+            account=None,
+            destination_account=user_account,
+            transaction_type="adjustment",
+            amount=Decimal("25.00"),
+            currency="USD",
+        )
+
+        entries = Ledger.objects.filter(transaction=tx)
+        assert entries.count() == 2
+
+        debit = entries.get(entry_type="debit")
+        credit = entries.get(entry_type="credit")
+
+        assert debit.account.fiataccount == sys_suspense
+        assert credit.account.fiataccount == user_account
+        assert debit.amount == credit.amount == Decimal("25.00")
+
+    def test_adjustment_negative_creates_correct_entries(self, setup_users_and_accounts):
+        sys_suspense = Account.get_sys_suspense_account("USD").fiataccount
+        user_account = setup_users_and_accounts["user_account_a"]
+
+        tx = self._create_tx(user_account, "adjustment", Decimal("-30.00"))
+
+        Ledger.objects.record(
+            tx=tx,
+            account=user_account,
+            destination_account=None,
+            transaction_type="adjustment",
+            amount=Decimal("-30.00"),
+            currency="USD",
+        )
+
+        entries = Ledger.objects.filter(transaction=tx)
+        assert entries.count() == 2
+
+        debit = entries.get(entry_type="debit")
+        credit = entries.get(entry_type="credit")
+
+        assert debit.account.fiataccount == user_account
+        assert credit.account.fiataccount == sys_suspense
+        assert debit.amount == credit.amount == Decimal("30.00")
+
+    def test_invalid_transaction_type_raises_validation_error(self, setup_users_and_accounts):
+        user_account = setup_users_and_accounts["user_account_a"]
+        tx = self._create_tx(user_account, "invalid_type")
+
+        with pytest.raises(ValidationError, match="Invalid transaction type"):
+            Ledger.objects.record(
+                tx=tx,
                 account=user_account,
                 destination_account=None,
-                transaction_type="invalid_type",
-                amount=Decimal("100"),
-                performed_by=acc["regular_user_a"],
-                description="Invalid transaction test",
-                direction=None,
+                transaction_type="nonsense",
+                amount=Decimal("10.00"),
                 currency="USD",
             )
+
+    def test_unbalanced_entries_raise_validation_error(self, setup_users_and_accounts, monkeypatch):
+        """Simulate imbalance before validation occurs."""
+        user_account = setup_users_and_accounts["user_account_a"]
+        tx = self._create_tx(user_account, "deposit")
+
+        original_init = Ledger.__init__
+
+        def fake_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            # Introduce imbalance in debit entries
+            if kwargs.get("entry_type") == "debit":
+                self.amount = self.amount + Decimal("1.00")
+
+        monkeypatch.setattr(Ledger, "__init__", fake_init)
+
+        with pytest.raises(ValidationError, match="Ledger imbalance"):
+            Ledger.objects.record(
+                tx=tx,
+                account=user_account,
+                destination_account=user_account,
+                transaction_type="deposit",
+                amount=Decimal("10.00"),
+                currency="USD",
+            )
+

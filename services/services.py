@@ -13,6 +13,8 @@ from celery import shared_task
 
 logger = logging.getLogger("bulkclix")
 
+proxies = {"http": "http://127.0.0.1:8080", "https": "http://127.0.0.1:8080"}
+
 def send_sms(recipients: list, message: str) -> bool:
     """
     Send an SMS to the specified phone number with the given message.
@@ -72,7 +74,7 @@ def check_sms_balance():
         print(f"Error sending SMS: {e}")
         return False
     
-def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_id, ):
+def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_id, dynamic_id):
     """
     Debit the account by the specified amount via mobile money.
     
@@ -92,16 +94,16 @@ def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_
     }
 
     payload = {
-        "amount":2,
+        "amount":float(amount),
         "phone_number":phone_number,
         "network":provider, # MTN , TELECEL, AIRTELTIGO
         "transaction_id": transaction_id, # Unique transaction ID from your system
-        "callback_url": "https://464791165650.ngrok-free.app/api/v1/webhooks/bulkclix/gc/", # Your callback URL to receive transaction status
-        "reference":""
+        "callback_url": f"https://464791165650.ngrok-free.app/api/v1/webhooks/bulkclix/gc/{dynamic_id}", # Your callback URL to receive transaction status
+        "reference":"reach test"
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
     except requests.exceptions.HTTPError:
         if response.status_code == 401:
@@ -123,7 +125,7 @@ def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_
     data = response.json()
 
     # If status is False in Bulkclix response, treat as ValidationError
-    if not data.get("status", False):
+    if not response.status_code == 200:
         logger.error("Bulkclix returned an error: %s", data)
         raise ValidationError(data.get("message", "Unknown error"))
 

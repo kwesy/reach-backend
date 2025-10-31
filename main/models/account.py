@@ -9,6 +9,7 @@ from common.models.common import TimeStampedModel
 import logging
 from django.db import IntegrityError
 from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.shortcuts import get_object_or_404
 
 from oauth.models.user import User
 
@@ -17,6 +18,9 @@ logger = logging.getLogger("transactions")
 
 def generate_account_number():
     return ''.join(secrets.choice('0123456789') for _ in range(11))
+
+def generate_reference_number():
+    return ''.join(secrets.choice('0123456789') for _ in range(13))
 
 class AccountManager(models.Manager):
     def fiat(self, currency='USD'):
@@ -250,7 +254,7 @@ class Account(models.Model):
                 sys_suspense_account = Account.get_sys_suspense_account()
                 sys_suspense_account.subtract_balance_safe(amount)
 
-                AccountTransaction.objects.record(
+                tx = AccountTransaction.objects.create(
                     account=self,
                     destination_account=self,
                     transaction_type='adjustment',
@@ -263,6 +267,17 @@ class Account(models.Model):
                     metadata={},
                     fee=Decimal('0'),
                 )
+
+                Ledger.objects.record(
+                    tx=tx,
+                    account=self,
+                    destination_account=self,
+                    transaction_type='adjustment',
+                    amount=amount,
+                    currency=self.currency,
+                    metadata={},
+                )
+
         except Exception as e:
             logger.error("Credit failed for account %s: %s", self.account_number, str(e), exc_info=True)
             AccountTransaction.objects.create(
@@ -295,11 +310,11 @@ class Account(models.Model):
                 sys_suspense_account = Account.get_sys_suspense_account() # Assumed function/variable
                 sys_suspense_account.add_balance_safe(amount)
 
-                AccountTransaction.objects.record(
+                tx = AccountTransaction.objects.create(
                     account=self,
                     destination_account=self,
                     transaction_type='adjustment',
-                    amount=-amount, # negative amount for debit
+                    amount=amount,
                     status='success',
                     performed_by=performed_by,
                     description=description,
@@ -308,13 +323,23 @@ class Account(models.Model):
                     metadata={},
                     fee=Decimal('0'),
                 )
+                Ledger.objects.record(
+                    tx=tx,
+                    account=self,
+                    destination_account=self,
+                    transaction_type='adjustment',
+                    amount=-amount, # negative amount for debit
+                    currency=self.currency,
+                    metadata={},
+                )
+                
         except Exception as e:
             logger.error("Debit failed for account %s: %s", self.account_number, str(e), exc_info=True)
             AccountTransaction.objects.create(
                 account=self,
                 destination_account=self,
                 transaction_type='adjustment',
-                amount=amount,
+                amount=-amount,
                 status='failed',
                 performed_by=performed_by,
                 description=f"{description} - Failed: {str(e)}",
@@ -344,7 +369,7 @@ class Account(models.Model):
 
                 revenue_account.add_balance_safe(fee_amount)
 
-                tx = AccountTransaction.objects.record(
+                tx = AccountTransaction.objects.create(
                     account=self,
                     destination_account=revenue_account,
                     transaction_type='fee',
@@ -356,6 +381,15 @@ class Account(models.Model):
                     currency=self.currency,
                     metadata={},
                     fee=Decimal('0'),
+                )
+                Ledger.objects.record(
+                    tx=tx,
+                    account=self,
+                    destination_account=revenue_account,
+                    transaction_type='fee',
+                    amount=fee_amount,
+                    currency=self.currency,
+                    metadata={},
                 )
                 return tx
             
@@ -386,7 +420,7 @@ class Account(models.Model):
 
                 recipient_account.add_balance(amount)
 
-                AccountTransaction.objects.record(
+                tx = AccountTransaction.objects.create(
                     account=sender_account,
                     destination_account=recipient_account,
                     transaction_type='transfer',
@@ -398,7 +432,15 @@ class Account(models.Model):
                     currency=self.currency,
                     metadata={},
                     fee=Decimal('0'),
-                    external_party_details={},
+                )
+                Ledger.objects.record(
+                    tx=tx,
+                    account=sender_account,
+                    destination_account=recipient_account,
+                    transaction_type='transfer',
+                    amount=amount,
+                    currency=self.currency,
+                    metadata={},
                 )
         except Exception as e:
             logger.error("Transfer failed for %s: %s", self.account_number, str(e), exc_info=True)
@@ -414,33 +456,46 @@ class Account(models.Model):
                 currency=self.currency,
                 metadata=None,
                 fee=Decimal('0'),
-                external_party_details=None,
             )
             raise e
 
-    def deposit(self, amount, direction, external_details=None, performed_by=None, description="Deposit", metadata={}, auto_complete=False):
+    def deposit(self, amount, direction, performed_by=None, description="Deposit", metadata={}, auto_complete=False) -> 'AccountTransaction':
         amount = self.quantize(amount)
         if amount <= 0:
             raise ValueError("Deposit amount must be positive.")
 
         try:
             with transaction.atomic():
-                self.add_balance_safe(amount)
 
-                AccountTransaction.objects.record(
+                tx = AccountTransaction.objects.create(
                     account=self,
                     destination_account=self,
                     transaction_type='deposit',
                     amount=amount,
                     status='success' if auto_complete else 'pending',
                     performed_by=performed_by,
-                    external_party_details=external_details,
                     description=description,
                     direction=direction,
                     currency=self.currency,
                     metadata=metadata,
                     fee=Decimal('0'),
                 )
+
+                if auto_complete:
+                    self.add_balance_safe(amount)
+                    Account.get_sys_account().add_balance_safe(amount)
+                    Ledger.objects.record(
+                        tx=tx,
+                        account=self,
+                        destination_account=self,
+                        transaction_type='deposit',
+                        amount=amount,
+                        currency=self.currency,
+                        metadata=metadata,
+                    )
+
+                return tx
+            
         except Exception as e:
             logger.error("Deposit failed for account %s: %s", self.account_number, str(e), exc_info=True)
             AccountTransaction.objects.create(
@@ -450,7 +505,6 @@ class Account(models.Model):
                 amount=amount,
                 status='failed',
                 performed_by=performed_by,
-                external_party_details=external_details,
                 description=description,
                 direction=direction,
                 currency=self.currency,
@@ -459,8 +513,66 @@ class Account(models.Model):
 
             )
             raise e
+        
+    def deposit_confirm(self, transaction_id: uuid.UUID, status: str, amount, metadata: dict):
+        """
+        Confirm a pending deposit transaction.
 
-    def withdraw(self, amount, direction, fee_rate=0.01, external_details=None, performed_by=None, description="Withdrawal", auto_complete=True):
+        This method:
+        - Locks both the account and transaction rows for safe concurrent updates.
+        - Validates that the transaction is still pending.
+        - Ensures the confirmed amount is not less than the original transaction amount.
+        - Credits the account balance if the deposit is successful.
+        - Updates and returns the corresponding AccountTransaction record.
+        """
+        amount = self.quantize(amount)
+
+        try:
+            with transaction.atomic():
+                # Lock the transaction row to prevent double processing
+                tx = get_object_or_404(
+                    AccountTransaction.objects.select_for_update(),
+                    pk=transaction_id,
+                    transaction_type="deposit"
+                )
+
+                # --- Validation ---
+                if tx.status != "pending":
+                    raise ValidationError("This transaction has already been processed.")
+
+                if amount < self.to_decimal(tx.amount):
+                    raise ValidationError("Confirmed deposit amount cannot be less than the original amount.")
+
+                # --- Apply balance update if successful ---
+                if status == "success":
+                    self.add_balance_safe(amount)
+                    Account.get_sys_account().add_balance_safe(amount)
+
+                    Ledger.objects.record(
+                    tx=tx,
+                    account=self,
+                    destination_account=self,
+                    transaction_type='deposit',
+                    amount=amount,
+                    currency=self.currency,
+                    metadata=metadata,
+                )
+
+                # --- Update transaction record ---
+                tx.status = status
+                tx.metadata = metadata
+                tx.save()
+
+                # Refresh to ensure latest DB state before returning
+                tx.refresh_from_db()
+
+                return tx
+        except Exception as e:
+            logger.error("Deposit failed for account %s: %s", self.account_number, str(e), exc_info=True)
+            raise e
+
+
+    def withdraw(self, amount, direction, fee_rate=0.01, performed_by=None, description="Withdrawal", auto_complete=True):
         amount = self.quantize(amount)
         fee = self.quantize(amount * Decimal(fee_rate))
         external_fee = self.quantize(amount * Decimal('0.01')) #TODO: calculate external fee properly
@@ -502,24 +614,34 @@ class Account(models.Model):
                 if fee > 0: # credit internal fee to platform revenue account
                     fee_tx = self.charge_fee(fee)
 
-                AccountTransaction.objects.record(
+                metadata = {
+                        'external_fee': str(external_fee),
+                        **(
+                            {'fee_tx': str(fee_tx.id)} if fee > 0 else {} # include fee_tx only if fee was charged
+                        )
+                    }
+
+                tx = AccountTransaction.objects.create(
                     account=self,
                     destination_account=None,
                     transaction_type='withdrawal',
                     amount=amount,
                     status=status,
                     performed_by=performed_by,
-                    external_party_details=external_details,
                     description=description,
                     direction=direction,
                     currency=self.currency,
-                    metadata={
-                        'external_fee': str(external_fee),
-                        **(
-                            {'fee_tx': str(fee_tx.id)} if fee > 0 else {} # include fee_tx only if fee was charged
-                        )
-                    },
+                    metadata=metadata,
                     fee=fee,
+                )
+                Ledger.objects.record(
+                    tx=tx,
+                    account=self,
+                    destination_account=None,
+                    transaction_type='withdrawal',
+                    amount=amount,
+                    currency=self.currency,
+                    metadata=metadata,
                 )
         except Exception as e:
             logger.error("Withdrawal failed for account %s: %s", self.account_number, str(e), exc_info=True)
@@ -530,7 +652,6 @@ class Account(models.Model):
                 amount=amount,
                 status='failed',
                 performed_by=performed_by,
-                external_party_details=external_details,
                 description=f"{description} - Failed: {str(e)}",
                 direction=direction,
                 currency=self.currency,
@@ -553,42 +674,21 @@ class CryptoAccount(Account):
     blockchain_network = models.CharField(max_length=100)
 
 
-class TransactionManager(models.Manager):
+class LedgerManager(models.Manager):
     """Custom manager that encapsulates all ledger recording logic."""
 
     @transaction.atomic
     def record(
         self,
+        tx: 'AccountTransaction',
         account: str,
         destination_account: str,
         transaction_type: str,
         amount: Decimal,
-        performed_by: User,
-        description: str,
-        direction: str,
         currency: str,
-        fee: Decimal = Decimal('0'),
         metadata: dict = {},
-        external_party_details: dict = {},
-        status:str = 'pending',
     ):
         """Creates a double-entry transaction ledger validation."""
-
-        # Create the transaction record
-        tx = self.create(
-                account=account,
-                destination_account=destination_account,
-                transaction_type=transaction_type,
-                amount=amount,
-                status=status,
-                performed_by=performed_by,
-                external_party_details=external_party_details,
-                description=description,
-                direction=direction,
-                fee=fee,
-                metadata=metadata or {},
-                currency=currency,
-            )
         
         sys_account = Account.get_sys_account(currency=currency)
         sys_revenue_account = Account.get_sys_revenue_account(currency=currency)
@@ -683,7 +783,6 @@ class TransactionManager(models.Manager):
         # Save entries
         Ledger.objects.bulk_create(entries)
 
-        return tx
 
 class AccountTransaction(TimeStampedModel):
     TRANSACTION_TYPES = (
@@ -721,7 +820,7 @@ class AccountTransaction(TimeStampedModel):
         on_delete=models.SET_NULL,
         related_name='received_transactions'
     )
-    external_party_details = models.JSONField(null=True, blank=True)
+    reference_id = models.CharField(max_length=11, unique=True, editable=False, default=generate_reference_number)
 
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     direction = models.CharField(max_length=30, choices=TRANSACTION_DIRECTIONS, null=True, blank=True)
@@ -734,7 +833,11 @@ class AccountTransaction(TimeStampedModel):
     metadata = models.JSONField(null=True, blank=True)
     currency = models.CharField(max_length=3, choices=Account.CURRENCY_CHOICES)
 
-    objects = TransactionManager()
+    class Meta:
+        indexes = [
+            models.Index(fields=["reference_id"]),
+        ]
+
     
     def __str__(self):
         return f"{self.transaction_type.title()} of {self.amount} on {self.account} ({self.status})"
@@ -747,6 +850,8 @@ class Ledger(models.Model):
     entry_type = models.CharField(max_length=10, choices=ENTRY_TYPES)
     amount = models.DecimalField(max_digits=40, decimal_places=18)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = LedgerManager()
 
     def __str__(self):
         return f"{self.entry_type.upper()} {self.amount} {self.account.currency} → {self.account}"

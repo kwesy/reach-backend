@@ -22,4 +22,5 @@ urlpatterns = [
     path('api/v1/', include('oauth.urls', namespace='oauth')),
     path('api/v1/admin/', include('superadmin.urls', namespace='superadmin')),
     path('api/v1/giftcards/', include('giftcards.urls', namespace='giftcards')),
+    path('api/v1/', include('main.urls', namespace='main'))
 ]
