@@ -1,4 +1,5 @@
 import logging
+from common.mixins.ip_blocker import IPBlockerMixin
 from common.mixins.response import StandardResponseView
 from main.serializers import DepositFundsSerializer
 from rest_framework import permissions, status
@@ -6,7 +7,8 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from main.models import AccountTransaction
 from services.services import charge_mobile_money
-
+from rest_framework.views import APIView
+from decouple import config
 
 logger = logging.getLogger('error')
 
@@ -31,8 +33,12 @@ class DepositView(StandardResponseView):
 
         return Response(status=status.HTTP_201_CREATED)
 
-class DepositWebHookView(StandardResponseView):
+ALLOWED_DEPOSIT_ENDPOINT_IPS = config('ALLOWED_DEPOSIT_ENDPOINT_IPS', cast=lambda v: [ip.strip() for ip in v.split(',')])
+
+class DepositWebHookView(IPBlockerMixin, APIView):
     permission_class = [permissions.AllowAny]
+    WHITELIST_IPS = ALLOWED_DEPOSIT_ENDPOINT_IPS
+    ENFORCE_WHITELIST = True
 
     def post(self, request, transaction_id):
         data = request.data

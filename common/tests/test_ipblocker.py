@@ -2,9 +2,7 @@
 import pytest
 from django.urls import path
 from rest_framework.test import APIClient
-import logging
 
-logger = logging.getLogger("error")
 
 # View
 # main/views.py
@@ -43,7 +41,6 @@ def test_whitelisted_ip_allowed(client):
 def test_blacklisted_ip_denied(client):
     """Should deny access from explicitly blacklisted IP."""
     response = client.get("/protected/", REMOTE_ADDR="10.0.0.5")
-    logger.info(response.json())
     assert response.status_code == 403
     assert "unathorized" in response.json()["message"].lower()
 

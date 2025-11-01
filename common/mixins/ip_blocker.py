@@ -13,9 +13,7 @@ class IPBlockerMixin:
     ENFORCE_WHITELIST = True  # If True, only allow IPs in whitelist
 
     def initial(self, request, *args, **kwargs):
-        print(f"=============================================")
         client_ip, is_routable = get_client_ip(request)
-        print(f"=========={client_ip} {is_routable}==========")
 
         if not client_ip:
             raise PermissionDenied({"detail":"Unathorized"})
