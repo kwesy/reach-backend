@@ -5,6 +5,8 @@ from superadmin.views import LoginView, GiftCardTypeViewSet, GiftCardViewSet
 from superadmin.views.giftcard import RedeemedGiftCardView
 from superadmin.views.user import AdminUserViewSet
 from superadmin.views.account import AdminAllCryptoAccountViewSet, AdminAllFiatAccountViewSet
+from superadmin.views.dashboard import AdminDashboardView
+
 
 app_name = 'superadmin'
 router = DefaultRouter()
@@ -18,6 +20,8 @@ router.register(r'cryptoaccounts', AdminAllCryptoAccountViewSet, basename='admin
 urlpatterns = [
     path('login/', LoginView.as_view(), name='admin-login'),
     path('', include(router.urls)),
+
+    path('dashboard', AdminDashboardView.as_view(), name='admin-dashboard'),
 
     # redeem gift cards 
     path('redeemed-giftcards-orders', RedeemedGiftCardView.as_view(), name='admin-redeem-giftcards-orders'), # view all user redeemed gift cards
