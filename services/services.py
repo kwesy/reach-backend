@@ -98,7 +98,7 @@ def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_
         "phone_number":phone_number,
         "network":provider, # MTN , TELECEL, AIRTELTIGO
         "transaction_id": transaction_id, # Unique transaction ID from your system
-        "callback_url": f"https://464791165650.ngrok-free.app/api/v1/webhooks/bulkclix/gc/{dynamic_id}", # Your callback URL to receive transaction status
+        "callback_url": f"https://88f5651fff71.ngrok-free.app/api/v1/webhooks/bulkclix/gc/{dynamic_id}", # Your callback URL to receive transaction status
         "reference":"reach test"
     }
 

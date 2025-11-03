@@ -7,9 +7,8 @@ class IPBlockerMixin:
     Add this mixin to any APIView or ViewSet to restrict access based on client IP.
     """
 
-    # Optional: set these in your subclass or from settings
-    WHITELIST_IPS = []  # e.g., ["192.168.1.10", "10.0.0.0/24"]
-    BLACKLIST_IPS = []  # e.g., ["203.0.113.15"]
+    WHITELIST_IPS = []
+    BLACKLIST_IPS = [] 
     ENFORCE_WHITELIST = True  # If True, only allow IPs in whitelist
 
     def initial(self, request, *args, **kwargs):
