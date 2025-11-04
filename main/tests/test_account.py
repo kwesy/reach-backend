@@ -940,3 +940,9 @@ class TestAccountCreditDebit:
         assert AccountTransaction.objects.filter(transaction_type="debit", status="failed").count() == 1
         failed_transaction = AccountTransaction.objects.filter(transaction_type="debit", status="failed").first()
         assert failed_transaction.description.startswith("Test debit failure - Failed")
+
+
+# TODO:
+# test transfer between user and system account not possible eg. asset to user A or vice-versa
+# test transfer between non user role and system account is possible eg. asset to revenue
+# test deposit on system asset doesn't cause double balance update

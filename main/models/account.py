@@ -221,12 +221,12 @@ class Account(models.Model):
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         return self.quantize(total)
 
-    def can_transfer(self, amount):
+    def can_transfer(self, amount, destination_account: 'Account'):
         amount = self.quantize(amount)
         if not self.transfer_allowed or not self.is_active or not self.owner.is_active:
             return False
         
-        if self.account_role != 'user':
+        if self.account_role != 'user' and destination_account.owner.role != 'sys':
             return False
          
         if amount <= 0 or amount > self.balance:
@@ -454,7 +454,7 @@ class Account(models.Model):
     def transfer(self, amount, destination_account, performed_by=None, description="Transfer"):
         amount = self.quantize(amount)
 
-        if not self.can_transfer(amount):
+        if not self.can_transfer(amount, destination_account):
             raise TransfersNotAllowedError("Transfer amount exceeds limits or insufficient balance or transfers disabled.")
 
         if not destination_account or not destination_account.is_active:
@@ -537,7 +537,8 @@ class Account(models.Model):
 
                 if auto_complete:
                     self.add_balance_safe(amount)
-                    Account.get_sys_account().add_balance_safe(amount)
+                    if self.account_role != 'asset': # allows deposit to be correctly made with system account without double balance update
+                        Account.get_sys_account().add_balance_safe(amount)
                     Ledger.objects.record(
                         tx=tx,
                         account=self,

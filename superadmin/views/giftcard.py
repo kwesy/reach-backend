@@ -49,6 +49,7 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
             return
 
         sys_account = Account.get_sys_account()
+        sys_revenue_acc = Account.get_sys_revenue_account()
         user_fiat_acc = redeemed_by.account.fiat()
         exchange_rate = serializer.instance.exchange_rate
 
@@ -69,7 +70,9 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
                     )
                 
                 # credit the user's fiat account with thier share
-                sys_account.transfer(amount_confirmed * exchange_rate, user_fiat_acc, performed_by=self.request.user, description=f"Gift Card Redemption ID: {serializer.instance.id}")
+                user_fiat_acc.credit_account(amount_confirmed * exchange_rate, performed_by=self.request.user, description=f"Gift Card Redemption ID: {str(serializer.instance.id)}")
+                if exchange_rate < 1: # if the plaform get a share
+                    sys_account.transfer(amount_confirmed * (1-exchange_rate), sys_revenue_acc, performed_by=self.request.user, description=f"Gift Card Redemption ID: {str(serializer.instance.id)}")
 
         except Exception as e:
             logger.error("Credit failed for account %s: %s", user_fiat_acc.account_number, str(e), exc_info=True)
