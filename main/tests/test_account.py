@@ -764,3 +764,179 @@ class TestLedgerManagerRecord:
                 currency="USD",
             )
 
+@pytest.mark.django_db
+class TestAccountCreditDebit:
+    """Tests for Account.credit_account() and Account.debit_account() methods."""
+
+    def test_credit_account_success(self, setup_users_and_accounts):
+        """Test successful crediting of an account."""
+        acc = setup_users_and_accounts
+        user_account = acc["user_account_a"]
+        sys_account = acc["sys_asset_account"]
+
+        initial_balance = user_account.balance
+        initial_sys_balance = sys_account.balance
+
+        user_account.credit_account(
+            amount=Decimal("100.00"),
+            description="Test credit",
+            performed_by=acc["admin_user"],
+        )
+
+        user_account.refresh_from_db()
+        sys_account.refresh_from_db()
+
+        # Assertions
+        assert user_account.balance == initial_balance + Decimal("100.00")
+        assert sys_account.balance == initial_sys_balance
+        assert AccountTransaction.objects.filter(transaction_type="credit").count() == 1
+        transaction = AccountTransaction.objects.filter(transaction_type="credit").first()
+        assert transaction.status == "success"
+        assert transaction.amount == Decimal("100.00")
+        assert transaction.description == "Test credit"
+        assert Ledger.objects.count() == 2
+        assert Ledger.objects.filter(account=user_account).count() == 1  # Debit and Credit entries
+        assert Ledger.objects.filter(transaction=transaction).count() == 2
+        assert Ledger.objects.filter(account=sys_account).first().entry_type == 'debit'
+        assert Ledger.objects.filter(account=user_account).first().entry_type == 'credit'
+
+    def test_credit_account_negative_amount(self, setup_users_and_accounts):
+        """Test that crediting a negative amount raises an error."""
+        acc = setup_users_and_accounts
+        user_account = acc["user_account_a"]
+
+        initial_balance = user_account.balance
+
+        with pytest.raises(ValueError, match="Credit amount must be positive."):
+            user_account.credit_account(
+                amount=Decimal("-50.00"),
+                description="Invalid credit",
+                performed_by=acc["admin_user"],
+            )
+
+        user_account.refresh_from_db()
+
+        # Ensure no transactions or ledger entries were created
+        assert initial_balance == user_account.balance
+        assert AccountTransaction.objects.filter(transaction_type="credit").count() == 0
+        assert Ledger.objects.filter(account=user_account).count() == 0
+
+    def test_credit_account_failure_logs_transaction(self, setup_users_and_accounts, monkeypatch):
+        """Test that a failed credit logs a failed transaction."""
+        acc = setup_users_and_accounts
+        user_account = acc["user_account_a"]
+
+        # Simulate an error during the credit process
+        def mock_add_balance_safe(*args, **kwargs):
+            raise Exception("Simulated failure")
+
+        monkeypatch.setattr(user_account, "add_balance_safe", mock_add_balance_safe)
+
+        with pytest.raises(Exception, match="Simulated failure"):
+            user_account.credit_account(
+                amount=Decimal("100.00"),
+                description="Test credit failure",
+                performed_by=acc["admin_user"],
+            )
+
+        # Ensure a failed transaction was logged
+        assert AccountTransaction.objects.filter(transaction_type="credit", status="failed").count() == 1
+        failed_transaction = AccountTransaction.objects.filter(transaction_type="credit", status="failed").first()
+        assert failed_transaction.description.startswith("Test credit failure - Failed")
+
+    def test_debit_account_success(self, setup_users_and_accounts):
+        """Test successful debiting of an account."""
+        acc = setup_users_and_accounts
+        user_account = acc["user_account_a"]
+        sys_account = acc["sys_asset_account"]
+
+        initial_balance = user_account.balance
+        initial_sys_balance = sys_account.balance
+
+        user_account.debit_account(
+            amount=Decimal("50.00"),
+            description="Test debit",
+            performed_by=acc["admin_user"],
+        )
+
+        user_account.refresh_from_db()
+        sys_account .refresh_from_db()
+
+        # Assertions
+        assert user_account.balance == initial_balance - Decimal("50.00")
+        assert sys_account.balance == initial_sys_balance
+        assert AccountTransaction.objects.filter(transaction_type="debit").count() == 1
+        transaction = AccountTransaction.objects.filter(transaction_type="debit").first()
+        assert transaction.status == "success"
+        assert transaction.amount == Decimal("50.00")
+        assert transaction.description == "Test debit"
+        assert Ledger.objects.count() == 2
+        assert Ledger.objects.filter(account=user_account).count() == 1
+        assert Ledger.objects.filter(transaction=transaction).count() == 2
+        assert Ledger.objects.filter(account=user_account).first().entry_type == 'debit'
+        assert Ledger.objects.filter(account=sys_account).first().entry_type == 'credit'
+
+    def test_debit_account_insufficient_funds(self, setup_users_and_accounts):
+        """Test that debiting more than the balance raises an error."""
+        acc = setup_users_and_accounts
+        user_account = acc["user_account_a"]
+
+        initial_balance = user_account.balance
+
+        with pytest.raises(InsufficientFundsError, match="Insufficient balance for debit."):
+            user_account.debit_account(
+                amount=Decimal("1000.00"),
+                description="Test insufficient funds",
+                performed_by=acc["admin_user"],
+            )
+
+        user_account.refresh_from_db()
+
+        # Ensure no transactions or ledger entries were created
+        assert initial_balance == user_account.balance
+        assert AccountTransaction.objects.filter(transaction_type="debit").count() == 0
+        assert Ledger.objects.filter(account=user_account).count() == 0
+
+    def test_debit_account_negative_amount(self, setup_users_and_accounts):
+        """Test that debiting a negative amount raises an error."""
+        acc = setup_users_and_accounts
+        user_account = acc["user_account_a"]
+
+        initial_balance = user_account.balance
+
+        with pytest.raises(ValueError, match="Debit amount must be positive."):
+            user_account.debit_account(
+                amount=Decimal("-50.00"),
+                description="Invalid debit",
+                performed_by=acc["admin_user"],
+            )
+
+        user_account.refresh_from_db()
+
+        # Ensure no transactions or ledger entries were created
+        assert initial_balance == user_account.balance
+        assert AccountTransaction.objects.filter(transaction_type="debit").count() == 0
+        assert Ledger.objects.filter(account=user_account).count() == 0
+
+    def test_debit_account_failure_logs_transaction(self, setup_users_and_accounts, monkeypatch):
+        """Test that a failed debit logs a failed transaction."""
+        acc = setup_users_and_accounts
+        user_account = acc["user_account_a"]
+
+        # Simulate an error during the debit process
+        def mock_subtract_balance_safe(*args, **kwargs):
+            raise Exception("Simulated failure")
+
+        monkeypatch.setattr(user_account, "subtract_balance_safe", mock_subtract_balance_safe)
+
+        with pytest.raises(Exception, match="Simulated failure"):
+            user_account.debit_account(
+                amount=Decimal("50.00"),
+                description="Test debit failure",
+                performed_by=acc["admin_user"],
+            )
+
+        # Ensure a failed transaction was logged
+        assert AccountTransaction.objects.filter(transaction_type="debit", status="failed").count() == 1
+        failed_transaction = AccountTransaction.objects.filter(transaction_type="debit", status="failed").first()
+        assert failed_transaction.description.startswith("Test debit failure - Failed")
