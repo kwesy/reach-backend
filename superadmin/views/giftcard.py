@@ -59,11 +59,12 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
                 sys_account.deposit(
                     amount=amount_confirmed,
                     direction="gift_card_to_account",
-                    description=f"Redeemed Gift Card ID: {serializer.instance.id}",
+                    description=f"Deposit with {serializer.instance.giftcard_type.name} Gift Card",
                     metadata={
-                        "source_type": source,
-                        "card_provider": serializer.instance.giftcard_type.name,
+                        "channel": "gift_card",
+                        "provider": source,
                         "external_ref_id": external_ref_id,
+                        "account_number": "",
                         },
                     performed_by=self.request.user,
                     auto_complete=True,
