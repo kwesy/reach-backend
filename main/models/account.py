@@ -225,7 +225,10 @@ class Account(models.Model):
         amount = self.quantize(amount)
         if not self.transfer_allowed or not self.is_active or not self.owner.is_active:
             return False
-
+        
+        if self.account_role != 'user':
+            return False
+         
         if amount <= 0 or amount > self.balance:
             return False
 
