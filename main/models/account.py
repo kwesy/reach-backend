@@ -137,7 +137,7 @@ class Account(models.Model):
         if not transaction.get_connection().in_atomic_block:
             raise ImproperlyConfigured("add_balance() must be called inside a transaction.atomic() block.")
 
-        amount = self.quantize(amount)
+        amount = self.quantize(abs(amount))
 
         self.balance = self.quantize(self.balance + amount)
         self.save(update_fields=["balance"])
@@ -152,7 +152,7 @@ class Account(models.Model):
         if not transaction.get_connection().in_atomic_block:
             raise ImproperlyConfigured("subtract_balance() must be called inside a transaction.atomic() block.")
 
-        amount = self.quantize(amount)
+        amount = self.quantize(abs(amount))
         if self.balance - amount < 0 and self.account_role != 'suspense':
             raise InsufficientFundsError("Balance cannot go negative.")
 
@@ -172,7 +172,7 @@ class Account(models.Model):
                 "add_balance_safe() must be called inside a transaction.atomic() block."
             )
     
-        amount = self.quantize(amount)
+        amount = self.quantize(abs(amount))
         # lock row for safe update
         locked_account = Account.objects.select_for_update().get(pk=self.pk)
         locked_account.balance = self.quantize(locked_account.balance + amount)
@@ -192,7 +192,7 @@ class Account(models.Model):
                 "subtract_balance_safe() must be called inside a transaction.atomic() block."
             )
         
-        amount = self.quantize(amount)
+        amount = self.quantize(abs(amount))
         # lock row for safe update
         locked_account = Account.objects.select_for_update().get(pk=self.pk)
         if locked_account.balance - amount < 0 and locked_account.account_role != 'suspense': # for now, only suspense account can go negative (temporary)
@@ -245,8 +245,8 @@ class Account(models.Model):
 
         return True
     
-    def credit_account(self, amount, description="adjust-up", performed_by=None):
-        """Credits the account with the specified amount and records the transaction."""
+    def credit_account(self, amount, description="Credit", performed_by=None):
+        """Allocate the account with the specified amount and records the transaction."""
         amount = self.quantize(amount)
         if amount <= 0:
             raise ValueError("Credit amount must be positive.")
@@ -254,8 +254,114 @@ class Account(models.Model):
         try:
             with transaction.atomic():
                 self.add_balance_safe(amount)
+
+                tx = AccountTransaction.objects.create(
+                    account=self,
+                    destination_account=self,
+                    transaction_type='credit',
+                    amount=amount,
+                    status='success',
+                    performed_by=performed_by,
+                    description=description,
+                    direction=None,
+                    currency=self.currency,
+                    metadata={},
+                    fee=Decimal('0'),
+                )
+
+                Ledger.objects.record(
+                    tx=tx,
+                    account=self,
+                    destination_account=self,
+                    transaction_type='credit',
+                    amount=amount,
+                    currency=self.currency,
+                    metadata={},
+                )
+
+        except Exception as e:
+            logger.error("Credit failed for account %s: %s", self.account_number, str(e), exc_info=True)
+            AccountTransaction.objects.create(
+                account=self,
+                destination_account=self,
+                transaction_type='credit',
+                amount=amount,
+                status='failed',
+                performed_by=performed_by,
+                description=f"{description} - Failed: {str(e)}",
+                direction=None,
+                currency=self.currency,
+                metadata={},
+                fee=Decimal('0'),
+            )
+            raise e
+        
+    def debit_account(self, amount, description="adjust-down", performed_by=None):
+        """Deduct the account with the specified amount and records the transaction."""
+        amount = self.quantize(amount)
+        if amount <= 0:
+            raise ValueError("Debit amount must be positive.")
+
+        if amount > self.balance:
+            raise InsufficientFundsError("Insufficient balance for debit.")
+
+        try:
+            with transaction.atomic():
+                self.subtract_balance_safe(amount)
+
+                tx = AccountTransaction.objects.create(
+                    account=self,
+                    destination_account=self,
+                    transaction_type='debit',
+                    amount=amount,
+                    status='success',
+                    performed_by=performed_by,
+                    description=description,
+                    direction=None,
+                    currency=self.currency,
+                    metadata={},
+                    fee=Decimal('0'),
+                )
+                Ledger.objects.record(
+                    tx=tx,
+                    account=self,
+                    destination_account=self,
+                    transaction_type='debit',
+                    amount=amount, # negative amount for debit
+                    currency=self.currency,
+                    metadata={},
+                )
+                
+        except Exception as e:
+            logger.error("Debit failed for account %s: %s", self.account_number, str(e), exc_info=True)
+            AccountTransaction.objects.create(
+                account=self,
+                destination_account=self,
+                transaction_type='debit',
+                amount=amount,
+                status='failed',
+                performed_by=performed_by,
+                description=f"{description} - Failed: {str(e)}",
+                direction=None,
+                currency=self.currency,
+                metadata={},
+                fee=Decimal('0'),
+            )
+            raise e
+        
+    def adjustment(self, amount, performed_by=None):
+        """Adjust the account with the specified amount and records the transaction."""
+        amount = self.quantize(amount)
+
+        try:
+            with transaction.atomic():
                 sys_suspense_account = Account.get_sys_suspense_account()
-                sys_suspense_account.subtract_balance_safe(amount)
+                if amount < Decimal('0'):
+                    self.subtract_balance_safe(amount)
+                    sys_suspense_account.add_balance_safe(amount)
+                else:
+                    self.add_balance_safe(amount)
+                    sys_suspense_account.subtract_balance_safe(amount)
 
                 tx = AccountTransaction.objects.create(
                     account=self,
@@ -264,7 +370,7 @@ class Account(models.Model):
                     amount=amount,
                     status='success',
                     performed_by=performed_by,
-                    description=description,
+                    description= 'adjust-up' if amount < Decimal('0') else 'adjust-down',
                     direction=None,
                     currency=self.currency,
                     metadata={},
@@ -290,62 +396,7 @@ class Account(models.Model):
                 amount=amount,
                 status='failed',
                 performed_by=performed_by,
-                description=f"{description} - Failed: {str(e)}",
-                direction=None,
-                currency=self.currency,
-                metadata={},
-                fee=Decimal('0'),
-            )
-            raise e
-        
-    def debit_account(self, amount, description="adjust-down", performed_by=None):
-        """Debits the account with the specified amount and records the transaction."""
-        amount = self.quantize(amount)
-        if amount <= 0:
-            raise ValueError("Debit amount must be positive.")
-
-        if amount > self.balance:
-            raise InsufficientFundsError("Insufficient balance for debit.")
-
-        try:
-            with transaction.atomic():
-                self.subtract_balance_safe(amount)
-                sys_suspense_account = Account.get_sys_suspense_account() # Assumed function/variable
-                sys_suspense_account.add_balance_safe(amount)
-
-                tx = AccountTransaction.objects.create(
-                    account=self,
-                    destination_account=self,
-                    transaction_type='adjustment',
-                    amount=amount,
-                    status='success',
-                    performed_by=performed_by,
-                    description=description,
-                    direction=None,
-                    currency=self.currency,
-                    metadata={},
-                    fee=Decimal('0'),
-                )
-                Ledger.objects.record(
-                    tx=tx,
-                    account=self,
-                    destination_account=self,
-                    transaction_type='adjustment',
-                    amount=-amount, # negative amount for debit
-                    currency=self.currency,
-                    metadata={},
-                )
-                
-        except Exception as e:
-            logger.error("Debit failed for account %s: %s", self.account_number, str(e), exc_info=True)
-            AccountTransaction.objects.create(
-                account=self,
-                destination_account=self,
-                transaction_type='adjustment',
-                amount=-amount,
-                status='failed',
-                performed_by=performed_by,
-                description=f"{description} - Failed: {str(e)}",
+                description=f"{'adjust-up' if amount < Decimal('0') else 'adjust-down',} - Failed: {str(e)}",
                 direction=None,
                 currency=self.currency,
                 metadata={},
@@ -771,6 +822,20 @@ class LedgerManager(models.Manager):
                 entries.append(Ledger(transaction=tx, account=account, entry_type="debit", amount=abs(principal_amount)))
                 entries.append(Ledger(transaction=tx, account=sys_suspense_account, entry_type="credit", amount=abs(principal_amount)))
             
+        # --- SCENARIO 6: Credit (Allocation of funds) ---
+        elif transaction_type == 'credit':
+            # Debit: Increase Platform Cash (Asset)
+            entries.append(Ledger(transaction=tx, account=sys_account, entry_type="debit", amount=principal_amount))
+            # Credit: User Liability (Increase user balance)
+            entries.append(Ledger(transaction=tx, account=account, entry_type="credit", amount=principal_amount))
+           
+            # --- SCENARIO 7: Debit (Deduction of funds) ---
+        elif transaction_type == 'debit':
+            # Debit: User Liability (Increase user balance)
+            entries.append(Ledger(transaction=tx, account=account, entry_type="debit", amount=principal_amount))
+            # Credit: Increase Platform Cash (Asset)
+            entries.append(Ledger(transaction=tx, account=sys_account, entry_type="credit", amount=principal_amount))
+        
         else:
             raise ValidationError("Invalid transaction type.")
 
@@ -794,6 +859,8 @@ class AccountTransaction(TimeStampedModel):
         ('transfer', 'Transfer'),
         ('adjustment', 'Adjustment'),
         ('fee', 'Fee'),
+        ('credit', 'Internal Credit'),
+        ('debit', 'Internal Debit')
     )
 
     STATUS_CHOICES = (

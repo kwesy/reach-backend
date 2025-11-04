@@ -229,9 +229,8 @@ class TestAccountTransactions:
         sys_suspense_account = acc["sys_suspense_account"]
 
         assert sys_suspense_account.balance == Decimal('0')
-        user_account.credit_account(
-            amount=Decimal("50"),
-            description="Positive adjustment",
+        user_account.adjustment(
+            amount=50,
             performed_by=acc["admin_user"],
         )
 
@@ -257,9 +256,8 @@ class TestAccountTransactions:
         # Ensure the suspense account starts with a balance of 0
         assert sys_suspense_account.balance == Decimal("0")
         
-        user_account.debit_account(
-            amount=Decimal("50"),
-            description="Negative adjustment",
+        user_account.adjustment(
+            amount=-50,
             performed_by=acc["admin_user"],
         )
 
