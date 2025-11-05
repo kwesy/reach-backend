@@ -52,5 +52,18 @@ class DepositFundsSerializer(serializers.Serializer):
         # DRF expects this to be a model instance (or equivalent)
         return tx
 
+class TransactionSerializer(serializers.ModelSerializer):
 
-    
+    class Meta:
+        model = AccountTransaction
+        fields = [
+            'reference_id',
+            'transaction_type',
+            'direction',
+            'amount',
+            'status',
+            'currency',
+            'description',
+            'created_at',
+        ]
+        read_only_fields = fields
