@@ -11,4 +11,4 @@ class TransactionView(StandardResponseView ,generics.ListAPIView):
     serializer_class = TransactionSerializer
 
     def get_queryset(self):
-        return AccountTransaction.objects.filter(account__owner=self.request.user)
+        return AccountTransaction.objects.exclude(transaction_type='fee').filter(account__owner=self.request.user).order_by('-created_at')
