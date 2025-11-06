@@ -14,3 +14,4 @@ pytest-django==4.11.1
 django-ipware==7.0.1
 celery==5.5.3
 redis==6.4.0
+django-filter==25.2

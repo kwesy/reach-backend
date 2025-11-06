@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'superadmin',
     'giftcards',
     'main',
+    'django_filters',
 ]
 
 MIDDLEWARE = [

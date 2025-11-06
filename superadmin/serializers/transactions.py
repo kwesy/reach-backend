@@ -5,6 +5,7 @@ from main.models import AccountTransaction
 class AdminTransactionSerializer(serializers.ModelSerializer):
     account = serializers.SerializerMethodField()
     destination_account = serializers.SerializerMethodField()
+    performed_by = serializers.CharField(source='performed_by.email', read_only=True)
     
     def get_account(self, instance):
         return {
@@ -14,7 +15,7 @@ class AdminTransactionSerializer(serializers.ModelSerializer):
         }
     
     def get_destination_account(self, instance):
-        return instance.destination_account.account_number
+        return instance.destination_account and instance.destination_account.account_number
     
     class Meta:
         model = AccountTransaction
