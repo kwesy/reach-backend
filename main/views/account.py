@@ -1,16 +1,22 @@
 import logging
 from common.mixins.ip_blocker import IPBlockerMixin
 from common.mixins.response import StandardResponseView
-from main.serializers import DepositFundsSerializer
+from main.serializers import DepositFundsSerializer, WithdrawFundsSerializer
 from rest_framework import permissions, status
 from rest_framework.response import Response
+from rest_framework.exceptions import APIException, ValidationError
 from django.shortcuts import get_object_or_404
 from main.models import AccountTransaction
-from services.services import charge_mobile_money
+from services.services import charge_mobile_money, send_mobile_money
 from rest_framework.views import APIView
 from decouple import config
+import secrets
+
 
 logger = logging.getLogger('error')
+
+def generate_reference_number(length):
+    return ''.join(secrets.choice('0123456789') for _ in range(length))
 
 class DepositView(StandardResponseView):
     permission_classes = [permissions.IsAuthenticated]
@@ -64,3 +70,50 @@ class DepositWebHookView(IPBlockerMixin, APIView):
         )
 
         return Response(status=status.HTTP_200_OK)
+    
+class WithdrawView(StandardResponseView):
+    permission_classes = [permissions.IsAuthenticated]
+    success_message = "Withdrawal successfull"
+    
+    def post(self, request):
+        account = request.user.account.fiat()
+
+        if not account:
+            raise ValidationError({"detail":"Account not provided or does not exist"})
+        if account.account_role not in ["user"]:
+            raise ValidationError({"detail":"Account type not allowed to perform withdrawals."})
+
+        serializer = WithdrawFundsSerializer(
+            data=request.data,
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        amount = data["amount"]
+        data["amount"] = str(amount)
+
+        try:
+            if data['channel'] == 'mobile_money':
+                client_reference = generate_reference_number(15)
+                res = send_mobile_money(amount=data['amount'], phone_number=data['account_number'], provider=data['network'], account_name='doe', client_reference=client_reference)
+
+                tx = account.withdraw(
+                    amount=amount,
+                    direction="account_to_mobile_money",
+                    performed_by=request.user,
+                    metadata= {
+                        "channel": data['channel'],
+                        "provider": data['network'],
+                        "client_reference": client_reference,
+                        "external_ref_id": res.get('transaction_id', ''),
+                        "account_number": data['account_number'],
+                        "account_name": "doe"
+                    }
+                )
+            else:
+                raise APIException("Withdrawal channel not supported.")
+        except Exception as e:
+            logger.error("Withdrawal failed for account %s: %s", account.account_number, str(e), exc_info=True)
+            raise APIException("Withdrawal failed. Please try again later.")   
+
+        return Response(status=status.HTTP_201_CREATED)

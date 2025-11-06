@@ -171,6 +171,12 @@ class TestAccountTransactions:
         user_account.withdraw(
             amount=Decimal("100"),
             direction="account_to_bank",
+            metadata={
+                "channel": "bank",
+                "provider": "stanbic",
+                "external_ref_id": "093217021383",
+                "account_number": "498483984984",
+            },
             performed_by=acc["regular_user_a"],
             description="Withdraw test",
         )
@@ -306,6 +312,12 @@ class TestAccountTransactions:
             user_account.withdraw(
                 amount=Decimal("1000"),
                 direction="account_to_bank",
+                metadata={
+                    "channel": "bank",
+                    "provider": "stanbic",
+                    "external_ref_id": "093217021383",
+                    "account_number": "498483984984",
+                },
                 performed_by=acc["regular_user_a"],
                 description="Insufficient funds test",
             )

@@ -627,7 +627,7 @@ class Account(models.Model):
             raise e
 
 
-    def withdraw(self, amount, direction, fee_rate=0.01, performed_by=None, description="Withdrawal", auto_complete=True):
+    def withdraw(self, amount, direction, metadata, fee_rate=0.01, performed_by=None, description="Withdrawal", auto_complete=True):
         amount = self.quantize(amount)
         fee = self.quantize(amount * Decimal(fee_rate))
         external_fee = self.quantize(amount * Decimal('0.01')) #TODO: calculate external fee properly
@@ -662,6 +662,9 @@ class Account(models.Model):
                 
                 if auto_complete:
                     self.subtract_balance_safe(amount + external_fee)
+                    system_account = Account.objects.select_for_update().get(pk=Account.get_sys_account().pk)
+                    t = amount + external_fee + fee
+                    system_account.subtract_balance(t)
                     status = 'success'
                 else:
                     status = 'pending'
@@ -669,11 +672,12 @@ class Account(models.Model):
                 if fee > 0: # credit internal fee to platform revenue account
                     fee_tx = self.charge_fee(fee)
 
-                metadata = {
+                _metadata = {
                         'external_fee': str(external_fee),
                         **(
-                            {'fee_tx': str(fee_tx.id)} if fee > 0 else {} # include fee_tx only if fee was charged
-                        )
+                            {'fee': str(fee_tx.id)} if fee > 0 else {} # include fee only if fee was charged
+                        ),
+                        **metadata
                     }
 
                 tx = AccountTransaction.objects.create(
@@ -686,7 +690,7 @@ class Account(models.Model):
                     description=description,
                     direction=direction,
                     currency=self.currency,
-                    metadata=metadata,
+                    metadata=_metadata,
                     fee=fee,
                 )
                 Ledger.objects.record(
@@ -696,7 +700,7 @@ class Account(models.Model):
                     transaction_type='withdrawal',
                     amount=amount,
                     currency=self.currency,
-                    metadata=metadata,
+                    metadata=_metadata,
                 )
         except Exception as e:
             logger.error("Withdrawal failed for account %s: %s", self.account_number, str(e), exc_info=True)
@@ -710,7 +714,7 @@ class Account(models.Model):
                 description=f"{description} - Failed: {str(e)}",
                 direction=direction,
                 currency=self.currency,
-                metadata={},
+                metadata=_metadata,
                 fee=fee,
             )
             raise e

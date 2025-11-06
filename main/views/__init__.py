@@ -1,2 +1,2 @@
-from .account import DepositView, DepositWebHookView
+from .account import DepositView, DepositWebHookView, WithdrawView
 from .transactions import TransactionView

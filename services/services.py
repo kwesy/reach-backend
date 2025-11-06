@@ -74,15 +74,17 @@ def check_sms_balance():
         print(f"Error sending SMS: {e}")
         return False
     
-def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_id, dynamic_id):
+def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_id: str, dynamic_id: str):
     """
-    Debit the account by the specified amount via mobile money.
-    
+    Charge the specified amount via mobile money.
     Args:
-        amount (float): The amount to debit.
-        
+        amount (float): The amount to charge.
+        phone_number (str): The phone number to charge.
+        provider (str): The mobile money provider (e.g., MTN, TELECEL, AIRTELTIGO).
+        transaction_id (str): Unique transaction ID from your system.
+        dynamic_id (str): Dynamic ID for callback URL.
     Returns:
-        bool: True if the transaction was successful, False otherwise.
+        dict: Response data from the Bulkclix API.
     """
     url = "https://api.bulkclix.com/api/v1/payment-api/momopay"
     api_key = config("BULKCLIX_API_KEY")
@@ -104,6 +106,65 @@ def charge_mobile_money(amount:int, phone_number:str, provider:str, transaction_
 
     try:
         response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+    except requests.exceptions.HTTPError:
+        if response.status_code == 401:
+            logger.error("Bulkclix API key Invalid: %s", response.json())
+        elif response.status_code == 400:
+            logger.error("Bulkclix Validation error: %s", response.json())
+        
+        raise APIException("internal error") # Bulkclix error
+    except requests.exceptions.Timeout:
+        logger.error("Bulkclix request timed out.")
+        raise APIException("internal error")
+    except requests.exceptions.ConnectionError:
+        logger.error("Failed to connect to Bulkclix.")
+        raise APIException("internal error")
+    except Exception as e:
+        logger.error("Unexpected error: %s", str(e), exc_info=True)
+        raise APIException("An unexpected error occured.")
+
+    data = response.json()
+
+    # If status is False in Bulkclix response, treat as ValidationError
+    if not response.status_code == 200:
+        logger.error("Bulkclix returned an error: %s", data)
+        raise ValidationError(data.get("message", "Unknown error"))
+
+    return data
+
+def send_mobile_money(amount:int, phone_number:str, provider:str, account_name: str, client_reference: str):
+    """
+    Send mobile money to the specified phone number.
+    Args:
+        amount (float): The amount to send.
+        phone_number (str): The recipient's phone number.
+        provider (str): The mobile money provider (e.g., MTN, TELECEL, AIRTELTIGO).
+        account_name (str): The name associated with the account.
+        client_reference (str): Unique transaction ID from your system.
+    Returns:
+        dict: Response data from the Bulkclix API.
+    """
+
+    url = "https://api.bulkclix.com/api/v1/payment-api/send/mobilemoney"
+    api_key = config("BULKCLIX_API_KEY")
+
+    headers = {
+        "x-api-key": api_key,
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "amount":float(amount),
+        "account_number":phone_number,
+        "channel":provider, # MTN , TELECEL, AIRTELTIGO
+        "account_name": account_name, # Unique transaction ID from your system
+        "client_reference": client_reference # 475894858498545
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, proxies=proxies, verify=False)
         response.raise_for_status()
     except requests.exceptions.HTTPError:
         if response.status_code == 401:

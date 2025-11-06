@@ -1,4 +1,5 @@
 from decimal import Decimal
+import secrets
 from rest_framework import serializers
 from django.db import transaction
 from .models import FiatAccount, AccountTransaction
@@ -8,6 +9,12 @@ NETWORK_CHOICES = (
     ('MTN', 'MTN'),
     ('TELECEL', 'Telecel'),
     ('AIRTELTIGO', 'AirtelTigo')
+)
+
+CHANNEL_CHOICES = (
+    ('mobile_money', 'Mobile Money'),
+    # ('bank', 'Bank'),
+    # ('gift_card', 'Gift card')
 )
 
 class DepositFundsSerializer(serializers.Serializer):
@@ -51,6 +58,32 @@ class DepositFundsSerializer(serializers.Serializer):
 
         # DRF expects this to be a model instance (or equivalent)
         return tx
+    
+class WithdrawFundsSerializer(serializers.Serializer):
+    channel = serializers.ChoiceField(
+        required=True,
+        choices=CHANNEL_CHOICES
+    )
+    amount = serializers.DecimalField(
+        required=True,
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.10"),
+        help_text="Amount to withdraw"
+    )
+    account_number = serializers.CharField(
+        required=True,
+        max_length=15,
+    )
+    network = serializers.ChoiceField(
+        required=True,
+        choices=NETWORK_CHOICES
+    )
+    account_name = serializers.CharField(
+        required=True,
+        max_length=255,
+    )
+
 
 class TransactionSerializer(serializers.ModelSerializer):
 
