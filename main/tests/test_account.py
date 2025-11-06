@@ -168,6 +168,8 @@ class TestAccountTransactions:
         system_account = acc["sys_asset_account"]
         system_revenue = acc["sys_revenue_account"]
 
+        assert system_account.balance == Decimal('100000')
+
         user_account.withdraw(
             amount=Decimal("100"),
             direction="account_to_bank",
@@ -183,7 +185,10 @@ class TestAccountTransactions:
 
         transactions = AccountTransaction.objects.filter(account=user_account)
 
+        system_account.refresh_from_db()
+
         assert user_account.balance == Decimal("398") # default external_fee_rate=0.01, fee_rate=0.01
+        assert system_account.balance == Decimal("99898") # default external_fee_rate=0.01, fee_rate=0.01
         assert transactions.count() == 2 # one for fee and other for the withdrawal
         assert transactions.filter(transaction_type="withdrawal").count() == 1
         assert transactions.filter(transaction_type="fee").count() == 1
@@ -307,6 +312,10 @@ class TestAccountTransactions:
     def test_insufficient_funds_withdraw(self, setup_users_and_accounts):
         acc = setup_users_and_accounts
         user_account = acc["user_account_a"]
+        system_account = acc["sys_asset_account"]
+
+        assert user_account.balance == Decimal('500')
+        assert system_account.balance == Decimal('100000')
 
         with pytest.raises(InsufficientFundsError):
             user_account.withdraw(
@@ -321,6 +330,12 @@ class TestAccountTransactions:
                 performed_by=acc["regular_user_a"],
                 description="Insufficient funds test",
             )
+
+        user_account.refresh_from_db()
+        system_account.refresh_from_db()
+
+        assert user_account.balance == Decimal('500')
+        assert system_account.balance == Decimal('100000')
 
     def test_transfer_insufficient_balance(self, setup_users_and_accounts):
             acc = setup_users_and_accounts
