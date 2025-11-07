@@ -1,7 +1,7 @@
 from rest_framework import generics, filters
 from main.models import AccountTransaction
 from superadmin.filters import TransactionFilter
-from superadmin.pagination import StandardResultsSetPagination
+from common.pagination import StandardResultsSetPagination
 from superadmin.serializers import AdminTransactionSerializer
 from common.mixins.response import StandardResponseView
 from oauth.permissions import IsAdmin
