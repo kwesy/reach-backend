@@ -61,6 +61,29 @@ class AdminAccountSerializer(serializers.ModelSerializer):
     def delete(self, instance):
         raise NotImplementedError("Accounts cannot be deleted via this serializer.")
     
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        # currency = instance.currency
+
+        # def format_number(number, currency_type):
+        #     if currency_type == 'JPY':
+        #         return f"{number:.0f}"
+        #     elif currency_type == 'BTC':
+        #         return f"{number:.8f}"
+        #     else:
+        #         return f"{number:.2f}"
+
+        # ret['balance'] = format_number(instance.balance, currency)
+        # ret['limit_per_transaction'] = format_number(instance.limit_per_transaction, currency)
+        # ret['daily_transfer_limit'] = format_number(instance.daily_transfer_limit, currency)
+        # ret['monthly_transfer_limit'] = format_number(instance.monthly_transfer_limit, currency)
+        ret['balance'] = instance.quantize(instance.balance)
+        ret['limit_per_transaction'] = instance.quantize(instance.limit_per_transaction)
+        ret['daily_transfer_limit'] = instance.quantize(instance.daily_transfer_limit)
+        ret['monthly_transfer_limit'] = instance.quantize(instance.monthly_transfer_limit)
+        
+        return ret
+    
 
 class AdminFiatAccountSerializer(AdminAccountSerializer):
     account_type = serializers.CharField(default="fiat")
