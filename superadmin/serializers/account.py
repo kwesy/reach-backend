@@ -86,70 +86,70 @@ class AdminAccountPolymorphicSerializer(serializers.Serializer):
         return AdminCryptoAccountSerializer(instance.cryptoaccount).data
 
 
-class AdminTransactionSerializer(serializers.ModelSerializer):
-    account = serializers.PrimaryKeyRelatedField(queryset=Account.objects.all())
-    destination_account = serializers.PrimaryKeyRelatedField(
-        queryset=Account.objects.all(), required=False, allow_null=True
-    )
-    performed_by = serializers.StringRelatedField(read_only=True)  # Or PrimaryKeyRelatedField if you prefer
-    currency = serializers.ChoiceField(choices=Account.CURRENCY_CHOICES)
+# class AdminTransactionSerializer(serializers.ModelSerializer):
+#     account = serializers.PrimaryKeyRelatedField(queryset=Account.objects.all())
+#     destination_account = serializers.PrimaryKeyRelatedField(
+#         queryset=Account.objects.all(), required=False, allow_null=True
+#     )
+#     performed_by = serializers.StringRelatedField(read_only=True)  # Or PrimaryKeyRelatedField if you prefer
+#     currency = serializers.ChoiceField(choices=Account.CURRENCY_CHOICES)
     
-    class Meta:
-        model = AccountTransaction
-        fields = [
-            "id",
-            "account",
-            "destination_account",
-            "external_party_details",
-            "transaction_type",
-            "direction",
-            "amount",
-            "status",
-            "performed_by",
-            "description",
-            "fee",
-            "metadata",
-            "currency",
-        ]
-        read_only_fields = fields
+#     class Meta:
+#         model = AccountTransaction
+#         fields = [
+#             "id",
+#             "account",
+#             "destination_account",
+#             # "external_party_details",
+#             "transaction_type",
+#             "direction",
+#             "amount",
+#             "status",
+#             "performed_by",
+#             "description",
+#             "fee",
+#             "metadata",
+#             "currency",
+#         ]
+#         read_only_fields = fields
 
-    # def validate_amount(self, value):
-    #     if value <= 0:
-    #         raise serializers.ValidationError("Transaction amount must be positive.")
-    #     return value
+#     # def validate_amount(self, value):
+#     #     if value <= 0:
+#     #         raise serializers.ValidationError("Transaction amount must be positive.")
+#     #     return value
 
-    # def validate_fee(self, value):
-    #     if value < 0:
-    #         raise serializers.ValidationError("Fee cannot be negative.")
-    #     return value
+#     # def validate_fee(self, value):
+#     #     if value < 0:
+#     #         raise serializers.ValidationError("Fee cannot be negative.")
+#     #     return value
 
-    # def validate(self, attrs):
-    #     account = attrs.get("account")
-    #     dest_account = attrs.get("destination_account")
-    #     currency = attrs.get("currency")
+#     # def validate(self, attrs):
+#     #     account = attrs.get("account")
+#     #     dest_account = attrs.get("destination_account")
+#     #     currency = attrs.get("currency")
 
-    #     if dest_account and account == dest_account:
-    #         raise serializers.ValidationError("Source and destination accounts cannot be the same.")
+#     #     if dest_account and account == dest_account:
+#     #         raise serializers.ValidationError("Source and destination accounts cannot be the same.")
 
-    #     # Optional: Check if the currency matches account currency
-    #     if account and currency != account.currency:
-    #         raise serializers.ValidationError("Transaction currency must match source account currency.")
+#     #     # Optional: Check if the currency matches account currency
+#     #     if account and currency != account.currency:
+#     #         raise serializers.ValidationError("Transaction currency must match source account currency.")
 
-    #     if dest_account and dest_account.currency != currency:
-    #         # This allows cross-currency but you might enforce rules if needed
-    #         raise serializers.ValidationError("Transaction currency must match source account currency.")
+#     #     if dest_account and dest_account.currency != currency:
+#     #         # This allows cross-currency but you might enforce rules if needed
+#     #         raise serializers.ValidationError("Transaction currency must match source account currency.")
 
-    #     return attrs
+#     #     return attrs
     
-    def create(self, validated_data):
-        # Ensure that transactions are created via business logic, not directly
-        raise NotImplementedError("Direct creation of transactions is not allowed. Use account methods instead.")
+#     def create(self, validated_data):
+#         # Ensure that transactions are created via business logic, not directly
+#         raise NotImplementedError("Direct creation of transactions is not allowed. Use account methods instead.")
     
-    def update(self, instance, validated_data):
-        # Transactions are immutable; prevent updates
-        raise NotImplementedError("Transactions cannot be updated once created.")
+#     def update(self, instance, validated_data):
+#         # Transactions are immutable; prevent updates
+#         raise NotImplementedError("Transactions cannot be updated once created.")
     
-    def delete(self, instance):
-        # Transactions cannot be deleted
-        raise NotImplementedError("Transactions cannot be deleted.")
+#     def delete(self, instance):
+#         # Transactions cannot be deleted
+#         raise NotImplementedError("Transactions cannot be deleted.")
     

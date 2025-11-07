@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from superadmin.views import LoginView, GiftCardTypeViewSet, GiftCardViewSet
 from superadmin.views.giftcard import RedeemedGiftCardView
 from superadmin.views.user import AdminUserViewSet
-from superadmin.views.account import AdminAllCryptoAccountViewSet, AdminAllFiatAccountViewSet
+from superadmin.views.account import AdminAccountTransactionView, AdminAllCryptoAccountViewSet, AdminAllFiatAccountViewSet
 from superadmin.views.dashboard import AdminDashboardView
 from superadmin.views.transactions import AdminTransactionView
 
@@ -24,6 +24,7 @@ urlpatterns = [
 
     path('dashboard/', AdminDashboardView.as_view(), name='admin-dashboard'),
     path('transactions/', AdminTransactionView.as_view(), name='admin-transactions'),
+    path('accounts/<str:account_number>/transactions/', AdminAccountTransactionView.as_view(), name='admin-account-transactions'),
 
     # redeem gift cards 
     path('redeemed-giftcards-orders', RedeemedGiftCardView.as_view(), name='admin-redeem-giftcards-orders'), # view all user redeemed gift cards
