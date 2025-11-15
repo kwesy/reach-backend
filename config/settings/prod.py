@@ -2,10 +2,8 @@ from .base import *
 import os
 from decouple import config
 
-
 DEBUG = False
-
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = config('ALLOWED_HOSTS').split(',')
 
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
