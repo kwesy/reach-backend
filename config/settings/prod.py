@@ -1,10 +1,10 @@
 from .base import *
-import os
 from decouple import config
 
 DEBUG = False
 ALLOWED_HOSTS = config('ALLOWED_HOSTS').split(',')
 
+# CORS_ALLOW_ALL_ORIGINS = True
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True

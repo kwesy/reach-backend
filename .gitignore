@@ -14,3 +14,4 @@ docker-compose.yml
 start.sh
 clear_ledger_transactions.sqlite3-query
 TODO.md
+.vscode/launch.json
