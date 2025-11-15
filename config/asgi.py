@@ -10,7 +10,8 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
 import os
 
 from django.core.asgi import get_asgi_application
+from decouple import config
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'secureevote.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.dev' if config('DEBUG', default=False, cast=bool) else 'config.settings.prod')
 
 application = get_asgi_application()
