@@ -1,9 +1,12 @@
 from rest_framework.views import exception_handler
 from utils.response import standard_response
+import logging
+
+logger = logging.getLogger('error')
 
 def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
-    print(f"Exception: {exc}, Context: {context}")
+    logger.error("Exception: %s, Context: %s", str(exc), str(context))
 
     if response is not None:
         data = response.data
@@ -31,7 +34,7 @@ def custom_exception_handler(exc, context):
         )
 
     # Unhandled exceptions (non-DRF)
-    print(f"Unhandled exception: {exc}")
+    # print(f"Unhandled exception: {exc}")
     return standard_response(
         data=None,
         message="Internal server error",
