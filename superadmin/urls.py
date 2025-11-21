@@ -27,6 +27,6 @@ urlpatterns = [
     path('accounts/<str:account_number>/transactions/', AdminAccountTransactionView.as_view(), name='admin-account-transactions'),
 
     # redeem gift cards 
-    path('redeemed-giftcards-orders', RedeemedGiftCardView.as_view(), name='admin-redeem-giftcards-orders'), # view all user redeemed gift cards
+    path('redeemed-giftcards-orders/', RedeemedGiftCardView.as_view(), name='admin-redeem-giftcards-orders'), # view all user redeemed gift cards
     path('redeem/<uuid:pk>', RedeemedGiftCardView.as_view(), name='admin-approve/reject-giftcards'), # admin to approve/reject
 ]
