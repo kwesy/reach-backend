@@ -1,7 +1,8 @@
 from giftcards.models.giftcard import RedeemedGiftCard
 from main.models.account import Account
+from superadmin.filters import GiftcardOrdersFilter
 from superadmin.serializers.giftcard import RedeemedGiftCardSerializer
-from rest_framework import viewsets, generics
+from rest_framework import viewsets, generics, filters
 from giftcards.models import GiftCard, GiftCardType
 from superadmin.serializers import GiftCardSerializer, GiftCardTypeSerializer
 from oauth.permissions import IsAdmin, IsAdminOrReadOnly
@@ -9,6 +10,8 @@ from common.mixins.response import StandardResponseView
 from django.db import transaction
 import logging
 from rest_framework.exceptions import ValidationError
+from common.pagination import StandardResultsSetPagination
+import django_filters.rest_framework
 
 
 logger = logging.getLogger('transactions')
@@ -29,6 +32,18 @@ class RedeemedGiftCardView(StandardResponseView, generics.ListAPIView, generics.
     serializer_class = RedeemedGiftCardSerializer
     permission_classes = [IsAdmin]
     filterset_fields = ['giftcard_type', 'status', 'redeemed_by']
+
+    filter_backends = [
+        django_filters.rest_framework.DjangoFilterBackend,
+        filters.SearchFilter
+    ]
+    filterset_class = GiftcardOrdersFilter 
+    # Define the fields to search using the 'search' query parameter
+    search_fields = [
+        'redeemed_by__email', 
+    ]
+
+    pagination_class = StandardResultsSetPagination
 
     def perform_update(self, serializer):
         amount_confirmed = serializer.validated_data.get('amount_confirmed', 0)

@@ -1,5 +1,6 @@
 # filters.py
 import django_filters
+from giftcards.models.giftcard import RedeemedGiftCard
 from main.models import AccountTransaction
 from main.models.account import Account
 
@@ -33,3 +34,14 @@ class AdminAccountFilter(django_filters.FilterSet):
     class Meta:
         model = Account
         fields = ['active', 'category', 'transfer_allowed']
+
+class GiftcardOrdersFilter(django_filters.FilterSet):
+    type = django_filters.CharFilter(field_name="giftcard_type")
+    status = django_filters.CharFilter(
+        field_name="status", 
+        lookup_expr='exact'
+    )
+
+    class Meta:
+        model = RedeemedGiftCard
+        fields = ['type', 'status']
