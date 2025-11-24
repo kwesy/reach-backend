@@ -29,7 +29,7 @@ class AdminAccountSerializer(serializers.ModelSerializer):
             "account_type",
         ]
         # read_only_fields = ["id", "account_number", "owner", "balance", "currency", "wallet", "blockchain_network", "metadata", "created_at", "updated_at"]
-        read_only_fields = fields # nothing can be changed via this serializers
+        # read_only_fields = fields # nothing can be changed via this serializers
 
     def validate_limit_per_transaction(self, value):
         if value <= 0:
@@ -54,9 +54,15 @@ class AdminAccountSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Daily transfer limit cannot exceed monthly transfer limit.")
         return attrs
     
-    def update(self, instance, validated_data):
+    def update(self, instance: FiatAccount, validated_data: dict):
         # Since all fields are read-only, we prevent updates
-        raise NotImplementedError("Accounts cannot be updated via this serializer.")
+        instance.limit_per_transaction = instance.quantize(validated_data.get('limit_per_transaction',instance.limit_per_transaction))
+        instance.daily_transfer_limit = instance.quantize(validated_data.get('daily_transfer_limit',instance.daily_transfer_limit))
+        instance.monthly_transfer_limit = instance.quantize(validated_data.get('monthly_transfer_limit',instance.monthly_transfer_limit))
+        instance.transfer_allowed = validated_data.get('transfer_allowed',instance.transfer_allowed)
+        instance.is_active = validated_data.get('is_active',instance.is_active)
+        instance.save()
+        return instance
 
     def delete(self, instance):
         raise NotImplementedError("Accounts cannot be deleted via this serializer.")
