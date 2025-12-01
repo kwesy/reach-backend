@@ -226,7 +226,7 @@ class Account(models.Model):
         if not self.transfer_allowed or not self.is_active or not self.owner.is_active:
             return False
         
-        if self.account_role != 'user' and destination_account.owner.role != 'sys':
+        if self.account_role != 'user' and destination_account.owner.role != 'sys': # asset accounts can only transfer to system accounts
             return False
          
         if amount <= 0 or amount > self.balance:
