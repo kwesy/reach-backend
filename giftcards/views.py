@@ -1,7 +1,8 @@
 from django.shortcuts import render
 from common.pagination import StandardResultsSetPagination
 from giftcards.models.giftcard import GiftCard, GiftCardType, RedeemedGiftCard
-from giftcards.serializers import GiftCardsSerializer, RedeemedGiftCardSerializer
+from giftcards.serializers import GiftCardTypeSerializer, GiftCardsSerializer, RedeemedGiftCardSerializer
+from main.models.account import Account
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status, generics
@@ -97,4 +98,83 @@ class GiftCardsListView(StandardResponseView, generics.ListAPIView):
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        return GiftCard.objects.filter(redeemed_by=self.request.user).order_by('redeemed_at')
+        return GiftCard.objects.filter(redeemed_by=self.request.user.email).order_by('redeemed_at')
+
+
+class GiftCardTypesListView(StandardResponseView, generics.ListAPIView):
+    """
+    API view to list all active gift card types.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = GiftCardTypeSerializer  # You may want to create a separate serializer for GiftCardType
+    # pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        return GiftCardType.objects.filter(is_active=True).order_by('name')
+    
+
+class BuyGiftCardView(StandardResponseView):
+    """
+    API view to buy a gift card.
+    """
+    permission_classes = [IsAuthenticated]
+    success_message = "Gift card purchase successful."
+
+    def post(self, request, *args, **kwargs):
+        gift_card_type_id = request.data.get('type')
+        amount = request.data.get('amount')
+
+        # payment info
+        channel = request.data.get('channel')
+        account_number = request.data.get('account_number')
+
+        if not gift_card_type_id:
+            raise ValidationError({'detail': 'Gift card type is required.'})
+        
+        gc_type = get_object_or_404(GiftCardType, pk=gift_card_type_id)
+
+        if not gc_type or not gc_type.is_active:
+            raise ValidationError({'detail': 'Invalid or inactive gift card type.'})
+
+        if amount not in gc_type.denominations:
+            raise ValidationError({'detail': 'Invalid denomination for selected gift card type.'})
+
+        if channel not in ['wallet']: # 'mobile_money'
+            raise ValidationError({'detail': 'Invalid payment channel.'})
+        
+        if channel == 'mobile_money' and not account_number:
+            raise ValidationError({'detail': 'Account number is required for mobile money payments.'})
+
+        # Check for available gift cards of the selected type and amount
+        gift_card = GiftCard.objects.filter(
+            giftcard_type=gc_type,
+            amount=amount,
+            is_redeemed=False
+        ).first()
+
+        if not gift_card:
+            raise ValidationError({'detail': 'No available gift cards for the selected type and amount.'})
+
+        # Process payment
+        if channel == 'wallet':
+            # Check if user has sufficient balance in wallet
+            wallet_account = request.user.account.fiat()
+            if not wallet_account or wallet_account.balance < amount:
+                raise ValidationError({'detail': 'Insufficient balance in wallet.'})
+            # Deduct amount from wallet
+            wallet_account.transfer(
+                destination_account=Account.get_sys_revenue_account(),
+                amount=amount,
+                performed_by=request.user,
+                description={f'Purchase of {gc_type.name} gift card'}
+            )
+
+        # Mark the gift card as redeemed
+        gift_card.is_redeemed = True
+        gift_card.redeemed_by = request.user.email
+        gift_card.redeemed_at = timezone.now()
+        gift_card.save()
+
+        serializer = GiftCardsSerializer(instance=gift_card)
+        print( serializer.data)
+        return Response( serializer.data, status=status.HTTP_200_OK)

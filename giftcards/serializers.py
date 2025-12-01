@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from giftcards.models.giftcard import RedeemedGiftCard
+from giftcards.models.giftcard import GiftCard, GiftCardType, RedeemedGiftCard
 
 
 class RedeemedGiftCardSerializer(serializers.ModelSerializer):
@@ -34,12 +34,35 @@ class RedeemedGiftCardSerializer(serializers.ModelSerializer):
         return data
     
 
-class GiftCardsSerializer(serializers.Serializer):
+class GiftCardsSerializer(serializers.ModelSerializer):
+    giftcard_type = serializers.SerializerMethodField()
+
+    def get_giftcard_type(self, obj):
+        return {
+            'id': str(obj.giftcard_type.id),
+            'name': obj.giftcard_type.name,
+        }
+
     class Meta:
+        model = GiftCard
         fields = [
             'id',
             'giftcard_type',
             'code',
             'amount',
             'redeemed_at',
+        ]
+
+
+class GiftCardTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GiftCardType
+        fields = [
+            'id',
+            'name',
+            'desc',
+            'denominations',
+            'category',
+            'is_active',
+            'exchange_rate',
         ]
