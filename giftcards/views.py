@@ -22,6 +22,7 @@ class RedeemGiftCardView(StandardResponseView):
     API view to redeem a gift card.
     """
     permission_classes = [IsAuthenticated]
+    success_message = "Gift card redemption initiated successfully. Please wait while we verify your gift card."
 
     def post(self, request, *args, **kwargs):
         gift_card_code = request.data.get('code')
@@ -166,7 +167,7 @@ class BuyGiftCardView(StandardResponseView):
                 destination_account=Account.get_sys_revenue_account(),
                 amount=amount,
                 performed_by=request.user,
-                description={f'Purchase of {gc_type.name} gift card'}
+                description=f'Purchase of {gc_type.name} gift card'
             )
 
         # Mark the gift card as redeemed
