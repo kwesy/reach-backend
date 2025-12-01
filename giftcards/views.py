@@ -1,6 +1,7 @@
 from django.shortcuts import render
+from common.pagination import StandardResultsSetPagination
 from giftcards.models.giftcard import GiftCard, GiftCardType, RedeemedGiftCard
-from giftcards.serializers import RedeemedGiftCardSerializer
+from giftcards.serializers import GiftCardsSerializer, RedeemedGiftCardSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status, generics
@@ -81,6 +82,19 @@ class RedeemedGiftCardListView(StandardResponseView, generics.ListAPIView):
     """
     permission_classes = [IsAuthenticated]
     serializer_class = RedeemedGiftCardSerializer
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         return RedeemedGiftCard.objects.filter(redeemed_by=self.request.user).order_by('-redeemed_at')
+
+
+class GiftCardsListView(StandardResponseView, generics.ListAPIView):
+    """
+    API view to list all active gift card types.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = GiftCardsSerializer  # You may want to create a separate serializer for GiftCardType
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        return GiftCard.objects.filter(redeemed_by=self.request.user).order_by('redeemed_at')

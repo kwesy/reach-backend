@@ -32,3 +32,14 @@ class RedeemedGiftCardSerializer(serializers.ModelSerializer):
             }
 
         return data
+    
+
+class GiftCardsSerializer(serializers.Serializer):
+    class Meta:
+        fields = [
+            'id',
+            'giftcard_type',
+            'code',
+            'amount',
+            'redeemed_at',
+        ]
