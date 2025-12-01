@@ -327,7 +327,7 @@ class Account(models.Model):
                     account=self,
                     destination_account=self,
                     transaction_type='debit',
-                    amount=amount, # negative amount for debit
+                    amount=amount,
                     currency=self.currency,
                     metadata={},
                 )
